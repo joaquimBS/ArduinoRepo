@@ -1,0 +1,6 @@
+#ifndef ARDUINOPROTO_H
+#define ARDUINOPROTO_H
+
+
+
+#endif	// ARDUINOPROTO_H
