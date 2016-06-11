@@ -14,6 +14,10 @@ void TaskFastPeriod( void *pvParameters );
 void TaskTemperatureRead( void *pvParameters );
 void TaskTimeRead( void *pvParameters );
 
+TaskHandle_t xHandle1 = NULL;
+TaskHandle_t xHandle2 = NULL;
+TaskHandle_t xHandle3 = NULL;
+
 #define FREQ_1000_MS  1000
 #define FREQ_500_MS   500
 #define FREQ_100_MS   100
@@ -26,55 +30,34 @@ DateTime now;
 void InitRtc(int timeout_ms)
 {
   bool isRTCInit = false;
+  char buff[20];
 
-  rtc.begin();
+  // rtc.begin();   // Needed ONLY IF not done before.
 
   unsigned long t0 = millis();
-  
 
+  Serial.println("InitRtc...");
+  
   while(!isRTCInit && ((millis() - t0) < timeout_ms) ) {
     if(rtc.isrunning())
       isRTCInit = true;
-    else {
+    else
       delay(25);
-      Serial.println(millis());
-    }
   }
 
   if(isRTCInit) {
-    Serial.println("RTC\tOK!");
-    _printDateTime();
+    now = rtc.now();
+
+    sprintf(buff, "RTC OK in %d ms.", millis() - t0);
+    Serial.println(buff);
+
+    sprintf(buff, "%04d/%02d/%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+    Serial.println(buff);
   }
   else {
     Serial.println("RTC\tFail!");
   }
-
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-}
-
-
-void _printDateTime()
-{
-  // if(isRTCInit) {
-    now = rtc.now();
-
-    Serial.print(now.year(), DEC);
-    Serial.print('/');
-    Serial.print(now.month(), DEC);
-    Serial.print('/');
-    Serial.print(now.day(), DEC);
-    Serial.print(' ');
-    Serial.print(now.hour(), DEC);
-    Serial.print(':');
-    Serial.print(now.minute(), DEC);
-    Serial.print(':');
-    Serial.print(now.second(), DEC);
-    Serial.println();
-
-    Serial.println(now.unixtime());
-
-    // delay(100);
-  // }
 }
 
 void InitOled()
@@ -95,9 +78,9 @@ void setup() {
   // initialize serial communication at 9600 bits per second:
   Serial.begin(115200);
 
-  InitOled();
+  InitOled();   // Initializes Wire interface, needed in InitRtc();
   // delay(100);
-  // InitRtc(100);
+  InitRtc();
 
   // Semaphores are useful to stop a Task proceeding, where it should be paused to wait,
   // because it is sharing a resource, such as the Serial port.
@@ -123,26 +106,26 @@ void setup() {
   xTaskCreate(
     TaskFastPeriod
     ,  (const portCHAR *)"DR1"  // A name just for humans
-    ,  256  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  256-120-3  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2  // Priority, with 1 being the highest, and 4 being the lowest.
-    ,  NULL );
+    ,  &xHandle1 );
 
   xTaskCreate(
     TaskTemperatureRead
     ,  (const portCHAR *) "TR1"
-    ,  101   // Stack size
+    ,  101-42-3   // Stack size
     ,  NULL
     ,  1  // Priority
-    ,  NULL );
+    ,  &xHandle2 );
 
   xTaskCreate(
     TaskTimeRead
     ,  (const portCHAR *) "TR2"
-    ,  100  // Stack size
+    ,  100-30-5  // Stack size
     ,  NULL
     ,  1  // Priority
-    ,  NULL );
+    ,  &xHandle3 );
 
   // Now the Task scheduler, which takes over control of scheduling individual Tasks, is automatically started.
 }
@@ -187,8 +170,8 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
         oled.home();
         oled.set2X();
 
-        sprintf(buff, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
-        oled.println(buff);
+        // sprintf(buff, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+        // oled.println(buff);
 
         sprintf(buff, "%d.%d C", int(DHT.temperature*10)/10, int(DHT.temperature*10)%10);
         oled.println(buff);
@@ -197,13 +180,18 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
         oled.println(buff);
 
         oled.set1X();
-        oled.println(dReadTime);
+        // oled.println(dReadTime);
         oled.println(tick);
+
+        oled.println(uxTaskGetStackHighWaterMark(xHandle1));
+        oled.println(uxTaskGetStackHighWaterMark(xHandle2));
+        oled.println(uxTaskGetStackHighWaterMark(xHandle3));
 
         xSemaphoreGive( xWireSemaphore );
       }
     }
-    vTaskDelay(FREQ_100_MS / portTICK_PERIOD_MS);
+    // vTaskDelay(FREQ_100_MS / portTICK_PERIOD_MS);
+    vTaskDelay(1);
   }
 }
 

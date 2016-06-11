@@ -32,6 +32,8 @@
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
 
+void InitRtc(int timeout_ms=500);
+
 // OLED region
 #define I2C_ADDRESS 0x3C
 #include "SSD1306Ascii.h"
