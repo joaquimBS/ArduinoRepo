@@ -12,6 +12,8 @@
 #include <avr/power.h>
 #include <avr/sleep.h>
 
+#include <SoftwareSerial.h>
+
 // Pinout
 // #define PIN0  0		// Rx
 // #define PIN1  1		// Tx
@@ -31,6 +33,7 @@
 
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
+#define ESP8266_BAUDRATE 	19200
 
 void InitRtc(int timeout_ms=500);
 

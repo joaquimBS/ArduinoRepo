@@ -22,6 +22,8 @@ TaskHandle_t xHandle3 = NULL;
 #define FREQ_500_MS   500
 #define FREQ_100_MS   100
 
+SoftwareSerial mySerial(6, 5); // RX, TX
+
 dht DHT;
 SSD1306AsciiAvrI2c oled;
 RTC_DS1307 rtc;
@@ -76,7 +78,8 @@ void InitOled()
 void setup() {
 
   // initialize serial communication at 9600 bits per second:
-  Serial.begin(115200);
+  Serial.begin(ESP8266_BAUDRATE);
+  mySerial.begin(ESP8266_BAUDRATE);
 
   InitOled();   // Initializes Wire interface, needed in InitRtc();
   // delay(100);
@@ -106,7 +109,7 @@ void setup() {
   xTaskCreate(
     TaskFastPeriod
     ,  (const portCHAR *)"DR1"  // A name just for humans
-    ,  256-120-3  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  260  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2  // Priority, with 1 being the highest, and 4 being the lowest.
     ,  &xHandle1 );
@@ -114,7 +117,7 @@ void setup() {
   xTaskCreate(
     TaskTemperatureRead
     ,  (const portCHAR *) "TR1"
-    ,  101-42-3   // Stack size
+    ,  configMINIMAL_STACK_SIZE - 34  // Stack size
     ,  NULL
     ,  1  // Priority
     ,  &xHandle2 );
@@ -122,7 +125,7 @@ void setup() {
   xTaskCreate(
     TaskTimeRead
     ,  (const portCHAR *) "TR2"
-    ,  100-30-5  // Stack size
+    ,  configMINIMAL_STACK_SIZE - 22  // Stack size
     ,  NULL
     ,  1  // Priority
     ,  &xHandle3 );
@@ -130,15 +133,16 @@ void setup() {
   // Now the Task scheduler, which takes over control of scheduling individual Tasks, is automatically started.
 }
 
-
 void loop()
 {
   tick++;
   digitalWrite(13, LOW);
 
-  set_sleep_mode( SLEEP_MODE_PWR_DOWN );
-  sleep_enable();
-  sleep_mode();
+  // set_sleep_mode( SLEEP_MODE_PWR_DOWN );
+  // sleep_enable();
+  // sleep_mode();
+
+  // ZZzzZZzzZZzz
 }
 
 /*--------------------------------------------------*/
@@ -159,6 +163,15 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
     // read the input pin:
     buttonState = digitalRead(PIN_BTN_YLW);
     digitalWrite(INFO_LED, !buttonState);
+
+    // taskENTER_CRITICAL();
+    if (mySerial.available()) {
+      Serial.write(mySerial.read());
+    }
+    if (Serial.available()) {
+      mySerial.write(Serial.read());
+    }
+    // taskEXIT_CRITICAL();
 
     if ( xSemaphoreTake( xMySemaphore, ( TickType_t ) 0 ) == pdTRUE )
     {
@@ -182,6 +195,7 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
         oled.set1X();
         // oled.println(dReadTime);
         oled.println(tick);
+        // oled.println(sleeping_time);
 
         oled.println(uxTaskGetStackHighWaterMark(xHandle1));
         oled.println(uxTaskGetStackHighWaterMark(xHandle2));
@@ -216,24 +230,23 @@ void TaskTemperatureRead( void *pvParameters __attribute__((unused)) )  // This 
       
     dReadTime = micros() - dReadTime;
     digitalWrite(13, LOW);
-
+      
     xSemaphoreGive( xMySemaphore ); // Now free or "Give" the Serial Port for others.
   }
 }
 
 void TaskTimeRead( void *pvParameters __attribute__((unused)) )  // This is a Task.
 {
-  TickType_t xLastWakeTime = xTaskGetTickCount ();
-  TickType_t xFrequency = FREQ_500_MS / portTICK_PERIOD_MS ;
-  bool state = true;
+  // TickType_t xLastWakeTime = xTaskGetTickCount ();
+  // TickType_t xFrequency = FREQ_500_MS / portTICK_PERIOD_MS ;
+  // bool state = true;
 
   for (;;)
   {
-    vTaskDelayUntil( &xLastWakeTime, xFrequency );
-
     if ( xSemaphoreTake( xWireSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
       now = rtc.now();
       xSemaphoreGive( xWireSemaphore );
     }
+    vTaskDelay(FREQ_500_MS / portTICK_PERIOD_MS);
   }
 }
