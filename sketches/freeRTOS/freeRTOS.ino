@@ -104,12 +104,11 @@ void setup() {
 
   pinMode(INFO_LED, OUTPUT);
   
-
   // Now set up two Tasks to run independently.
   xTaskCreate(
     TaskFastPeriod
     ,  (const portCHAR *)"DR1"  // A name just for humans
-    ,  260  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  256 // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2  // Priority, with 1 being the highest, and 4 being the lowest.
     ,  &xHandle1 );
@@ -197,10 +196,13 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
         oled.println(tick);
         // oled.println(sleeping_time);
 
-        oled.println(uxTaskGetStackHighWaterMark(xHandle1));
-        oled.println(uxTaskGetStackHighWaterMark(xHandle2));
-        oled.println(uxTaskGetStackHighWaterMark(xHandle3));
-
+        sprintf(buff, "%03d - %03d - %03d", 
+          uxTaskGetStackHighWaterMark(xHandle1),
+          uxTaskGetStackHighWaterMark(xHandle2),
+          uxTaskGetStackHighWaterMark(xHandle3)
+        );
+        oled.println(buff);
+        
         xSemaphoreGive( xWireSemaphore );
       }
     }
