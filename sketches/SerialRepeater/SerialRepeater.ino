@@ -1,6 +1,6 @@
 
 #include <SoftwareSerial.h>
-#include <dht.h>
+#include <DHTlib/dht.h>
 
 #define PIN_BTN_2   2   // INT0
 #define PIN_BTN_3   3   // INT1
@@ -28,7 +28,7 @@ void setup() {
 
   portOne.print(F("AT+RST\r\n"));
 
-  // Serial.println("Running...");
+  Serial.println("Running...");
 }
 
 int step=0;
@@ -41,17 +41,19 @@ long t1000 = millis();
 char buff[32];
 
 void loop() {
+  static int val = 0;
 
   if((millis() - t1000) > 1000) {
     t1000 = millis();
 
-    while(DHT.read22(DHTPIN) != DHTLIB_OK);
+    while(DHT.read(DHTPIN) != DHTLIB_OK);
   }
 
   if((millis() - elapsed) > 250) {
 
     if(!digitalRead(PIN_BTN_2)) {
       enabled = true;
+      step=0;
 
       digitalWrite(13, 1);
       delay(250);
@@ -61,16 +63,21 @@ void loop() {
     }
   }
 
-  if(enabled) {
+  if(enabled && (millis() - elapsed) > val) {
+    elapsed = millis();
+
     switch(step) {
       case 0:
         portOne.print(F("AT+CIPMUX=1\r\n"));
+        val = 500;
         break;
       case 1:
         portOne.print(F("AT+CIPSTART=4,\"TCP\",\"data.sparkfun.com\",80\r\n"));
+        val = 2000;
         break;
       case 2:
         portOne.print(F("AT+CIPSEND=4,141\r\n"));
+        val = 500;
         break;
       case 3:
         portOne.print(F("GET /input/o87Zlv6Z8AF5o0z673Wl?private_key=yz4YqkJYzMiBRdjvxDXJ"));
@@ -94,8 +101,6 @@ void loop() {
         break;
     }
     step++;
-    delay(250);
-    elapsed = millis();
   }
   
   while(portOne.available()) {
