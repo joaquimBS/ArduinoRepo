@@ -1,5 +1,45 @@
+// #include "freeRTOS.h"
 
-#include "freeRTOS.h"
+// Custom Arduino libaries
+#include <dht.h>
+#include "RTClib.h"			// https://github.com/adafruit/RTClib
+// #include "IRremote.h"		// https://github.com/z3t0/Arduino-IRremote
+#include <Arduino_FreeRTOS.h>
+#include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
+//#include <MemoryFree.h>
+
+#include <avr/power.h>
+#include <avr/sleep.h>
+
+//#include <SoftwareSerial.h>
+
+// Pinout
+// #define PIN0  0		// Rx
+// #define PIN1  1		// Tx
+#define PIN_BTN_YLW 	2	// INT0
+#define PIN_BTN_RED		3 	// INT1
+#define DHTPIN			4
+#define PIN_PWM 		5
+// #define PIN_BTN_LESS	6
+#define OLED_VCC		7
+// #define RELE_PIN		8
+// #define INFO_LED		9
+// #define PIN10			10
+
+#define INFO_LED		12
+
+
+
+#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
+
+#define SERIAL_BPS 	19200
+
+void InitRtc(int timeout_ms=500);
+
+// OLED region
+#define I2C_ADDRESS 0x3C
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiAvrI2c.h"
 
 // Declare a mutex Semaphore Handle which we will use to manage the Serial Port.
 // It will be used to ensure only only one Task is accessing this resource at any time.
@@ -22,7 +62,7 @@ TaskHandle_t xHandle3 = NULL;
 #define FREQ_500_MS   500
 #define FREQ_100_MS   100
 
-SoftwareSerial mySerial(6, 5); // RX, TX
+//SoftwareSerial mySerial(6, 5); // RX, TX
 
 dht DHT;
 SSD1306AsciiAvrI2c oled;
@@ -78,11 +118,10 @@ void InitOled()
 void setup() {
 
   // initialize serial communication at 9600 bits per second:
-  Serial.begin(ESP8266_BAUDRATE);
-  mySerial.begin(ESP8266_BAUDRATE);
+  Serial.begin(SERIAL_BPS);
+  while(!Serial);
 
   InitOled();   // Initializes Wire interface, needed in InitRtc();
-  // delay(100);
   InitRtc();
 
   // Semaphores are useful to stop a Task proceeding, where it should be paused to wait,
@@ -116,7 +155,7 @@ void setup() {
   xTaskCreate(
     TaskTemperatureRead
     ,  (const portCHAR *) "TR1"
-    ,  configMINIMAL_STACK_SIZE - 34  // Stack size
+    ,  configMINIMAL_STACK_SIZE - 30  // Stack size
     ,  NULL
     ,  1  // Priority
     ,  &xHandle2 );
@@ -124,7 +163,7 @@ void setup() {
   xTaskCreate(
     TaskTimeRead
     ,  (const portCHAR *) "TR2"
-    ,  configMINIMAL_STACK_SIZE - 22  // Stack size
+    ,  configMINIMAL_STACK_SIZE - 20  // Stack size
     ,  NULL
     ,  1  // Priority
     ,  &xHandle3 );
@@ -156,6 +195,7 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
   pinMode(PIN_BTN_YLW, INPUT_PULLUP);
   int ut = 0;
   int buttonState = digitalRead(PIN_BTN_YLW);
+  static int pwm_state = 0;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -163,14 +203,8 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
     buttonState = digitalRead(PIN_BTN_YLW);
     digitalWrite(INFO_LED, !buttonState);
 
-    // taskENTER_CRITICAL();
-    if (mySerial.available()) {
-      Serial.write(mySerial.read());
-    }
-    if (Serial.available()) {
-      mySerial.write(Serial.read());
-    }
-    // taskEXIT_CRITICAL();
+    if(!buttonState)    // Apretat
+      analogWrite(PIN_PWM, pwm_state++);
 
     if ( xSemaphoreTake( xMySemaphore, ( TickType_t ) 0 ) == pdTRUE )
     {
@@ -193,7 +227,8 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
 
         oled.set1X();
         // oled.println(dReadTime);
-        oled.println(tick);
+        // oled.println(tick);
+        oled.println(pwm_state);
         // oled.println(sleeping_time);
 
         sprintf(buff, "%03d - %03d - %03d", 
@@ -206,8 +241,8 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
         xSemaphoreGive( xWireSemaphore );
       }
     }
-    // vTaskDelay(FREQ_100_MS / portTICK_PERIOD_MS);
-    vTaskDelay(1);
+    vTaskDelay(FREQ_100_MS / portTICK_PERIOD_MS);
+    //vTaskDelay(1);
   }
 }
 
