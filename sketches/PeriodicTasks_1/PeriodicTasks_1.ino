@@ -10,7 +10,7 @@
 // #include "IRremote.h"			// https://github.com/z3t0/Arduino-IRremote
 // #include <Arduino_FreeRTOS.h>
 // #include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
-// #include <dht.h>
+#include <dht.h>
 // #include <MemoryFree.h>
 
 #define 	USE_OLED
@@ -24,10 +24,12 @@
 #endif
 
 // I/O Pins
-enum {P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13_INFO_LED, PIN_COUNT};
+enum {P0, P1, P2, P3, P4_DHT, P5, P6, P7, P8, P9, P10, P11, P12, P13_INFO_LED, PIN_COUNT};
 
 // Custom defines
 #define SERIAL_BAUDRATE 	19200
+#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
+dht DHT;
 
 #define FREQ_1000_MS  1000
 #define FREQ_500_MS   500
@@ -64,14 +66,26 @@ void setup() {
 void loop()
 {
 	static bool led_state = true;
+	char buff[32];
 
 	if((millis() - ticks_1000) >= FREQ_1000_MS) {
 		ticks_1000 = millis();
 		/*
 		 * So something every 1000 ms
 		 */
-		oled.setRow(1);
-		oled.println(millis());
+		if(DHT.read22(P4_DHT) == DHTLIB_OK) {
+			oled.home();
+			oled.set2X();
+
+			// sprintf(buff, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+			// oled.println(buff);
+
+			sprintf(buff, "%d.%d C", int(DHT.temperature*10)/10, int(DHT.temperature*10)%10);
+			oled.println(buff);
+
+			sprintf(buff, "%d.%d Hum.", int(DHT.humidity*10)/10, int(DHT.humidity*10)%10);
+			oled.println(buff);
+		}
 		
 		digitalWrite(P13_INFO_LED, led_state);
 		led_state = !led_state;
@@ -82,8 +96,8 @@ void loop()
 		/*
 		 * So something every 500 ms
 		 */
-		oled.setRow(2);
-		oled.println(millis());
+		// oled.setRow(2);
+		// oled.println(millis());
 	}
 
 	if((millis() - ticks_100) >= FREQ_100_MS) {
@@ -91,7 +105,7 @@ void loop()
 		/*
 		 * So something every 100 ms
 		 */
-		oled.setRow(3);
-		oled.println(millis());
+		// oled.setRow(3);
+		// oled.println(millis());
 	}
 }
