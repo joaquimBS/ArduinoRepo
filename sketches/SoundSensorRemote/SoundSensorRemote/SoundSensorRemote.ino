@@ -11,7 +11,7 @@
 // #include <Arduino_FreeRTOS.h>
 // #include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
 // #include <MemoryFree.h>
-#include <dht.h>
+#include "dht.h"
 #include "LowPower.h"           // https://github.com/rocketscream/Low-Power
 // #include <Sleep_n0m1.h>
 
@@ -19,26 +19,26 @@
 #define WITH_SPIFLASH
 
 // I/O Pins
-enum {P0, P1, P2, INT_RED, DHT_PIN, P5, P6, P7, FLASH_SS, INFO_LED, P10, P11, P12, P13, PIN_COUNT};	/* Moteino */
+enum {P0, P1, P2, INT_RED, P4, P5, DHT_PIN, P7, FLASH_SS, INFO_LED, P10, P11, P12, P13, PIN_COUNT};	/* Moteino */
 
 #define LED_ON      digitalWrite(INFO_LED, HIGH)
 #define LED_OFF     digitalWrite(INFO_LED, LOW)
 
 #if defined(WITH_RFM69) || defined(WITH_SPIFLASH)
-  #include <SPI.h>                //comes with Arduino IDE (www.arduino.cc)
-  #if defined(WITH_RFM69)
-    #include <RFM69.h>            //get it here: https://www.github.com/lowpowerlab/rfm69
-    RFM69 radio;
-    #define GATEWAYID   1
-    #define NETWORKID 100
-    #define NODEID 11
-    #define FREQUENCY RF69_868MHZ
-    #define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
-  #endif
-  #if defined(WITH_SPIFLASH)
-    #include <SPIFlash.h>         //get it here: https://www.github.com/lowpowerlab/spiflash
-    SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
-  #endif
+#include <SPI.h>                //comes with Arduino IDE (www.arduino.cc)
+#if defined(WITH_RFM69)
+#include <RFM69.h>            //get it here: https://www.github.com/lowpowerlab/rfm69
+RFM69 radio;
+#define GATEWAYID   1
+#define NETWORKID 100
+#define NODEID 11
+#define FREQUENCY RF69_868MHZ
+#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+#endif
+#if defined(WITH_SPIFLASH)
+#include <SPIFlash.h>         //get it here: https://www.github.com/lowpowerlab/spiflash
+SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
+#endif
 #endif
 
 typedef enum {STATE_ON = 0, STATE_POWER_SAVE} t_system_state;
@@ -64,42 +64,42 @@ void updateOledData();
 
 void RSI_Red()
 {
-    wake_up_cause = INT_EXT;
+	wake_up_cause = INT_EXT;
 }
 
 void setup()
 {
-    Serial.begin(SERIAL_BR);
-    while(!Serial);
+	Serial.begin(SERIAL_BR);
+	while(!Serial);
 
-    for(int p=0; p<PIN_COUNT; p++) {
-        pinMode(p, INPUT);
-        digitalWrite(p, LOW);
-    }
+	for(int p=0; p<PIN_COUNT; p++) {
+		pinMode(p, INPUT);
+		digitalWrite(p, LOW);
+	}
 
-    pinMode(INT_RED, INPUT_PULLUP);
-    pinMode(INFO_LED, OUTPUT);
+	pinMode(INT_RED, INPUT_PULLUP);
+	pinMode(INFO_LED, OUTPUT);
 
-    LED_ON;
+	LED_ON;
 
-#ifdef WITH_RFM69
-    radio.initialize(FREQUENCY,NODEID,NETWORKID);
-    radio.setHighPower();
-    radio.encrypt(ENCRYPTKEY);
-    radio.sleep();
-#endif
+	#ifdef WITH_RFM69
+	radio.initialize(FREQUENCY,NODEID,NETWORKID);
+	radio.setHighPower();
+	radio.encrypt(ENCRYPTKEY);
+	radio.sleep();
+	#endif
 
-#ifdef WITH_SPIFLASH
-    if (flash.initialize()) {
-        flash.sleep();
-    }
-#endif
+	#ifdef WITH_SPIFLASH
+	if (flash.initialize()) {
+		flash.sleep();
+	}
+	#endif
 
-    char buff[50];
-    sprintf(buff, "\Transmitting at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
-    Serial.println(buff);
+	char buff[50];
+	sprintf(buff, "\Transmitting at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
+	Serial.println(buff);
 
-    LED_OFF;
+	LED_OFF;
 }
 
 #define CYCLES_OF_SLEEP_S   (unsigned int) 10
@@ -112,80 +112,76 @@ static long timer_to_sleep = TIMER_HOLD;
 
 void loop()
 {
-    if(wake_up_cause == INT_EXT) {
-        if(timer_to_sleep == TIMER_HOLD) {
-            timer_to_sleep = millis();
+	if(wake_up_cause == INT_EXT) {
+		if(timer_to_sleep == TIMER_HOLD) {
+			timer_to_sleep = millis();
 
-        }
+		}
 
-        // if(DHT.read22(DHT_PIN) == DHTLIB_OK) {
-        //     /* Do something with the data. */
-        // }
+		// if(DHT.read22(DHT_PIN) == DHTLIB_OK) {
+		//     /* Do something with the data. */
+		// }
 
-        if((millis() - timer_to_sleep) >= TIMEOUT_TO_SLEEP_MS) {
-            timer_to_sleep = TIMER_HOLD;
-            cycles = CYCLES_OF_SLEEP_S;
-            goToSleep();
-        }
-    }
-    else {
-        if(cycles == 0) {
-            periodicTask();
-            cycles = CYCLES_OF_SLEEP_S;
-        }
-        else {
-            cycles--;
-            goToSleep();
-        }
-    }
+		if((millis() - timer_to_sleep) >= TIMEOUT_TO_SLEEP_MS) {
+			timer_to_sleep = TIMER_HOLD;
+			cycles = CYCLES_OF_SLEEP_S;
+			goToSleep();
+		}
+	}
+	else {
+		if(cycles == 0) {
+			periodicTask();
+			cycles = CYCLES_OF_SLEEP_S;
+		}
+		else {
+			cycles--;
+			goToSleep();
+		}
+	}
 }
 
 void periodicTask()
 {
-    // DHT.read22(DHT_PIN);
-    char buff[200];
+	char buff[8];
 
-    int c=33;
+	if(DHT.read22(DHT_PIN) == DHTLIB_OK) {
+		LED_ON;
+		sprintf(buff, "%d.%d C", int(DHT.temperature*10)/10, int(DHT.temperature*10)%10);
 
-    for(int i=0; i<200; i++) {
-        buff[i] = c;
-        c++;
-        if(c>125)
-            c=33;
-    }
+		// sprintf(buff, "%d.%d Hum.", int(DHT.humidity*10)/10, int(DHT.humidity*10)%10);
+		// oled.println(buff);
 
-    // sprintf(buff, "%d", (int)random(20,25));
-    int sendSize = strlen(buff);
+		int sendSize = strlen(buff);
+		radio.sendWithRetry(GATEWAYID, buff, sendSize, 2, 40);
+		radio.send(GATEWAYID, buff, sendSize);
+		LED_OFF;
+	}
 
-    LED_ON;
-    radio.sendWithRetry(GATEWAYID, buff, sendSize, 10, 200);
-    radio.sendWithRetry(GATEWAYID, buff, sendSize, 10, 200);
-    radio.sendWithRetry(GATEWAYID, buff, sendSize, 10, 200);
-    LED_OFF;
+	remaining_sleep_cycles = SLEEP_CYC_10S;
 }
 
 void goToSleep()
 {
-    // flash.sleep();   /* Only if it was awake. */
-    radio.sleep();
-    wake_up_cause = CYCLIC;
+	// flash.sleep();   /* Only if it was awake. */
+	radio.sleep();
+	wake_up_cause = CYCLIC;
 
-    attachInterrupt(digitalPinToInterrupt(INT_RED), RSI_Red, LOW);
-    // Enter power down state with ADC and BOD module disabled.
-    // Wake up when wake up pin is low.
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-    // ZZzzZZzzZZzz
+	attachInterrupt(digitalPinToInterrupt(INT_RED), RSI_Red, LOW);
+	// Enter power down state with ADC and BOD module disabled.
+	// Wake up when wake up pin is low.
+	LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+	// ZZzzZZzzZZzz
 
-    // Disable external pin interrupt on wake up pin.
-    detachInterrupt(digitalPinToInterrupt(INT_RED));
+	// Disable external pin interrupt on wake up pin.
+	detachInterrupt(digitalPinToInterrupt(INT_RED));
 
-    wakeUp();
+	wakeUp();
 }
 
 /* Wake up routine */
 void wakeUp()
 {
-    /* Do some wake up routines. */
-    /* radio doesn't need to be wake up. */
+	/* Do some wake up routines. */
+	/* radio doesn't need to be wake up. */
 
 }
