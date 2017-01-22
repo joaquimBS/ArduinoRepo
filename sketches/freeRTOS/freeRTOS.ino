@@ -13,26 +13,14 @@
 
 //#include <SoftwareSerial.h>
 
-// Pinout
-// #define PIN0  0		// Rx
-// #define PIN1  1		// Tx
-#define PIN_BTN_YLW 	2	// INT0
-#define PIN_BTN_RED		3 	// INT1
-#define DHTPIN			4
-#define PIN_PWM 		5
-// #define PIN_BTN_LESS	6
-#define OLED_VCC		7
-// #define RELE_PIN		8
-// #define INFO_LED		9
-// #define PIN10			10
 
-#define INFO_LED		12
+enum {P0, P1, PIN_BTN_YLW, PIN_BTN_RED, DHTPIN, OLED_VCC, P6, P7, P8, P9, P10, P11, PIN_PWM, INFO_LED, PIN_COUNT};
 
 
 
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
-#define SERIAL_BPS 	19200
+#define SERIAL_BPS 	115200
 
 void InitRtc(int timeout_ms=500);
 
@@ -44,7 +32,7 @@ void InitRtc(int timeout_ms=500);
 // Declare a mutex Semaphore Handle which we will use to manage the Serial Port.
 // It will be used to ensure only only one Task is accessing this resource at any time.
 SemaphoreHandle_t xMySemaphore;
-SemaphoreHandle_t xWireSemaphore;
+// SemaphoreHandle_t xWireSemaphore;
 
 unsigned long tick = 0;
 unsigned long dReadTime = 0;
@@ -52,7 +40,7 @@ unsigned long dReadTime = 0;
 // define two Tasks for DigitalRead & AnalogRead
 void TaskFastPeriod( void *pvParameters );
 void TaskTemperatureRead( void *pvParameters );
-void TaskTimeRead( void *pvParameters );
+// void TaskTimeRead( void *pvParameters );
 
 TaskHandle_t xHandle1 = NULL;
 TaskHandle_t xHandle2 = NULL;
@@ -121,27 +109,29 @@ void setup() {
   Serial.begin(SERIAL_BPS);
   while(!Serial);
 
-  InitOled();   // Initializes Wire interface, needed in InitRtc();
-  InitRtc();
+  // InitOled();   // Initializes Wire interface, needed in InitRtc();
+  // InitRtc();
 
   // Semaphores are useful to stop a Task proceeding, where it should be paused to wait,
   // because it is sharing a resource, such as the Serial port.
   // Semaphores should only be used whilst the scheduler is running, but we can set it up here.
-  if ( xMySemaphore == NULL )  // Check to confirm that the Serial Semaphore has not already been created.
-  {
-    xMySemaphore = xSemaphoreCreateBinary();  // Create a mutex semaphore we will use to manage the Serial Port
-    if ( ( xMySemaphore ) != NULL )
-      xSemaphoreTake( xMySemaphore, ( TickType_t ) 0 );
-  }
+  // if ( xMySemaphore == NULL )  // Check to confirm that the Serial Semaphore has not already been created.
+  // {
+  //   xMySemaphore = xSemaphoreCreateBinary();  // Create a mutex semaphore we will use to manage the Serial Port
+  //   if ( ( xMySemaphore ) != NULL )
+  //     xSemaphoreTake( xMySemaphore, ( TickType_t ) 0 );
+  // }
 
-  if ( xWireSemaphore == NULL )  // Check to confirm that the Serial Semaphore has not already been created.
-  {
-    xWireSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore we will use to manage the Serial Port
-    if ( ( xWireSemaphore ) != NULL )
-      xSemaphoreGive( xWireSemaphore );
-  }
+  // if ( xWireSemaphore == NULL )  // Check to confirm that the Serial Semaphore has not already been created.
+  // {
+  //   xWireSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore we will use to manage the Serial Port
+  //   if ( ( xWireSemaphore ) != NULL )
+  //     xSemaphoreGive( xWireSemaphore );
+  // }
 
   pinMode(INFO_LED, OUTPUT);
+
+
   
   // Now set up two Tasks to run independently.
   xTaskCreate(
@@ -160,13 +150,15 @@ void setup() {
     ,  1  // Priority
     ,  &xHandle2 );
 
-  xTaskCreate(
-    TaskTimeRead
-    ,  (const portCHAR *) "TR2"
-    ,  configMINIMAL_STACK_SIZE - 20  // Stack size
-    ,  NULL
-    ,  1  // Priority
-    ,  &xHandle3 );
+  Serial.println("Test A");
+
+  // xTaskCreate(
+  //   TaskTimeRead
+  //   ,  (const portCHAR *) "TR2"
+  //   ,  configMINIMAL_STACK_SIZE - 20  // Stack size
+  //   ,  NULL
+  //   ,  1  // Priority
+  //   ,  &xHandle3 );
 
   // Now the Task scheduler, which takes over control of scheduling individual Tasks, is automatically started.
 }
@@ -199,6 +191,7 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
 
   for (;;) // A Task shall never return or exit.
   {
+    Serial.println(millis());
     // read the input pin:
     buttonState = digitalRead(PIN_BTN_YLW);
     digitalWrite(INFO_LED, !buttonState);
@@ -206,41 +199,41 @@ void TaskFastPeriod( void *pvParameters __attribute__((unused)) )  // This is a 
     if(!buttonState)    // Apretat
       analogWrite(PIN_PWM, pwm_state++);
 
-    if ( xSemaphoreTake( xMySemaphore, ( TickType_t ) 0 ) == pdTRUE )
-    {
-      if ( xSemaphoreTake( xWireSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
+    // if ( xSemaphoreTake( xMySemaphore, ( TickType_t ) 0 ) == pdTRUE )
+    // {
+      // if ( xSemaphoreTake( xWireSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
         
         ut = now.unixtime();
 
         // Serial.println(buff);
-        oled.home();
-        oled.set2X();
+        // oled.home();
+        // oled.set2X();
 
-        // sprintf(buff, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+        // // sprintf(buff, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+        // // oled.println(buff);
+
+        // sprintf(buff, "%d.%d C", int(DHT.temperature*10)/10, int(DHT.temperature*10)%10);
         // oled.println(buff);
 
-        sprintf(buff, "%d.%d C", int(DHT.temperature*10)/10, int(DHT.temperature*10)%10);
-        oled.println(buff);
+        // sprintf(buff, "%d.%d Hum.", int(DHT.humidity*10)/10, int(DHT.humidity*10)%10);
+        // oled.println(buff);
 
-        sprintf(buff, "%d.%d Hum.", int(DHT.humidity*10)/10, int(DHT.humidity*10)%10);
-        oled.println(buff);
+        // oled.set1X();
+        // // oled.println(dReadTime);
+        // // oled.println(tick);
+        // oled.println(pwm_state);
+        // // oled.println(sleeping_time);
 
-        oled.set1X();
-        // oled.println(dReadTime);
-        // oled.println(tick);
-        oled.println(pwm_state);
-        // oled.println(sleeping_time);
-
-        sprintf(buff, "%03d - %03d - %03d", 
-          uxTaskGetStackHighWaterMark(xHandle1),
-          uxTaskGetStackHighWaterMark(xHandle2),
-          uxTaskGetStackHighWaterMark(xHandle3)
-        );
-        oled.println(buff);
+        // sprintf(buff, "%03d - %03d - %03d", 
+        //   uxTaskGetStackHighWaterMark(xHandle1),
+        //   uxTaskGetStackHighWaterMark(xHandle2),
+        //   uxTaskGetStackHighWaterMark(xHandle3)
+        // );
+        // oled.println(buff);
         
-        xSemaphoreGive( xWireSemaphore );
-      }
-    }
+        // xSemaphoreGive( xWireSemaphore );
+      // }
+    // }
     vTaskDelay(FREQ_100_MS / portTICK_PERIOD_MS);
     //vTaskDelay(1);
   }
@@ -272,18 +265,18 @@ void TaskTemperatureRead( void *pvParameters __attribute__((unused)) )  // This 
   }
 }
 
-void TaskTimeRead( void *pvParameters __attribute__((unused)) )  // This is a Task.
-{
-  // TickType_t xLastWakeTime = xTaskGetTickCount ();
-  // TickType_t xFrequency = FREQ_500_MS / portTICK_PERIOD_MS ;
-  // bool state = true;
+// void TaskTimeRead( void *pvParameters __attribute__((unused)) )  // This is a Task.
+// {
+//   // TickType_t xLastWakeTime = xTaskGetTickCount ();
+//   // TickType_t xFrequency = FREQ_500_MS / portTICK_PERIOD_MS ;
+//   // bool state = true;
 
-  for (;;)
-  {
-    if ( xSemaphoreTake( xWireSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
-      now = rtc.now();
-      xSemaphoreGive( xWireSemaphore );
-    }
-    vTaskDelay(FREQ_500_MS / portTICK_PERIOD_MS);
-  }
-}
+//   for (;;)
+//   {
+//     if ( xSemaphoreTake( xWireSemaphore, ( TickType_t ) 10 ) == pdTRUE ) {
+//       now = rtc.now();
+//       xSemaphoreGive( xWireSemaphore );
+//     }
+//     vTaskDelay(FREQ_500_MS / portTICK_PERIOD_MS);
+//   }
+// }

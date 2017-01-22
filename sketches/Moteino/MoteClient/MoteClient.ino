@@ -1,5 +1,5 @@
 // AVR Libraries
-// #include <avr/power.h>
+// #include <avsr/power.h>
 // #include <avr/sleep.h>
 
 // Arduino libraries
