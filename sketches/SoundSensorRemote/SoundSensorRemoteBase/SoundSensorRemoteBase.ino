@@ -60,6 +60,9 @@ volatile t_wake_up_cause wake_up_cause;
 
 /* Function prototypes */
 void periodicTask();
+void InitializeRadio();
+void InitializeFlash();
+void InitializeOled();
 /***********************/
 
 // ========================== End of Header ====================================
@@ -79,27 +82,9 @@ void setup()
 
 	LED_ON;
 
-	#ifdef WITH_RFM69
-	radio.initialize(FREQUENCY,NODEID,NETWORKID);
-	radio.setHighPower();
-	radio.encrypt(ENCRYPTKEY);
-	radio.sleep();
-	#endif
-
-	#ifdef WITH_SPIFLASH
-	if (flash.initialize()) {
-		flash.sleep();
-	}
-	#endif
-
-	#ifdef USE_OLED
-	oled.begin(&Adafruit128x64, I2C_ADDRESS);
-	oled.setFont(Stang5x7);
-	oled.clear();
-
-	oled.home();
-	oled.set2X();
-	#endif
+	InitializeRadio();
+	InitializeFlash();
+	InitializeOled();
 
 	char buff[50];
 	sprintf(buff, "Receiving at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
@@ -148,4 +133,35 @@ void updateOledData()
 	static long i=0;
 	oled.println(i++);
 	#endif
+}
+
+void InitializeRadio()
+{
+#ifdef WITH_RFM69
+	radio.initialize(FREQUENCY,NODEID,NETWORKID);
+	radio.setHighPower();
+	radio.encrypt(ENCRYPTKEY);
+	radio.sleep();
+#endif
+}
+
+void InitializeFlash()
+{
+#ifdef WITH_SPIFLASH
+	if (flash.initialize()) {
+		flash.sleep();
+	}
+#endif
+}
+
+void InitializeOled()
+{
+#ifdef USE_OLED
+	oled.begin(&Adafruit128x64, I2C_ADDRESS);
+	oled.setFont(Stang5x7);
+	oled.clear();
+
+	oled.home();
+	oled.set2X();
+#endif
 }
