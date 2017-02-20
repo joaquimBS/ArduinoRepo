@@ -6,25 +6,26 @@
 // #include <SoftwareSerial.h>
 
 // Custom Arduino libraries
+#include "../lib/project_cfg.h"
 // #include "RTClib.h"         // https://github.com/adafruit/RTClib
 // #include "IRremote.h"       // https://github.com/z3t0/Arduino-IRremote
 // #include <Arduino_FreeRTOS.h>
 // #include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
 // #include <MemoryFree.h>
-// #include <dht.h>
-// #include "LowPower.h"           // https://github.com/rocketscream/Low-Power
+#include "dht.h"
+#include "LowPower.h"           // https://github.com/rocketscream/Low-Power
 // #include <Sleep_n0m1.h>
-#include "help.h"
 
 #define WITH_RFM69
 // #define WITH_SPIFLASH
 #define 	USE_OLED
 
-// I/O Pins
-enum {P0, P1, P2, INT_RED, DHT_PIN, P5, P6, P7, FLASH_SS, INFO_LED, P10, P11, P12, P13, PIN_COUNT};	/* Moteino */
-
-#define LED_ON      digitalWrite(INFO_LED, HIGH)
-#define LED_OFF     digitalWrite(INFO_LED, LOW)
+#ifdef USE_OLED
+#define I2C_ADDRESS 0x3C
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiAvrI2c.h"
+SSD1306AsciiAvrI2c oled;
+#endif
 
 #if defined(WITH_RFM69) || defined(WITH_SPIFLASH)
 #include <SPI.h>                //comes with Arduino IDE (www.arduino.cc)
@@ -66,8 +67,6 @@ void setup()
 	Serial.begin(SERIAL_BR);
 	while(!Serial);
 
-	// testAAAA();
-
 	for(int p=0; p<PIN_COUNT; p++) {
 		pinMode(p, INPUT);
 		digitalWrite(p, LOW);
@@ -75,6 +74,7 @@ void setup()
 
 	pinMode(INT_RED, INPUT_PULLUP);
 	pinMode(INFO_LED, OUTPUT);
+	pinMode(A0, INPUT);
 
 	LED_ON;
 
@@ -106,6 +106,8 @@ void loop()
 
 		LED_OFF;
 	}
+  //radio.sleep();
+  // LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
 }
 
 void updateOledData()
@@ -115,19 +117,29 @@ void updateOledData()
 
 	oled.clear();
 
-	// Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
-	for (byte i = 0; i < radio.DATALEN; i++) {
-		buff[i] = (char)radio.DATA[i];
-	}
+	int16_t rx_temp = 0;
+	int16_t rx_humi = 0;
+	uint16_t rx_micr = 0;
 
+	rx_temp = radio.DATA[0] + (radio.DATA[1] << 8);
+	rx_humi = radio.DATA[2] + (radio.DATA[3] << 8);
+	rx_micr = radio.DATA[4] + (radio.DATA[5] << 8);
+
+	sprintf(buff, "%d.%d C", rx_temp/10, rx_temp%10);
+	oled.println(buff);
+	sprintf(buff, "%d.%d Hum", rx_humi/10, rx_humi%10);
+	oled.println(buff);
+	sprintf(buff, "%d Mic.", rx_micr);
+	oled.println(buff);
+	sprintf(buff, "RSSI:%d", radio.RSSI);
 	oled.println(buff);
 
-	sprintf(buff, "RSSI: %d", radio.RSSI);
-	oled.println(buff);
+	sprintf(buff, "%d;%d;%d", rx_temp, rx_humi, rx_micr);
+	DEBUGLN(buff);
 
-	/* Keep count of the Rx frames */
-	static long i=0;
-	oled.println(i++);
+	// /* Keep count of the Rx frames */
+	// static long i=0;
+	// oled.println(i++);
 	#endif
 }
 
