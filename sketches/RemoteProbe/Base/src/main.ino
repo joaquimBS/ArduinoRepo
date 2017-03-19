@@ -120,18 +120,27 @@ void updateOledData()
 	int16_t rx_temp = 0;
 	int16_t rx_humi = 0;
 	uint16_t rx_micr = 0;
+	uint16_t rx_vbat = 0;
+	uint8_t rx_sample_time = 0;
 
 	rx_temp = radio.DATA[0] + (radio.DATA[1] << 8);
 	rx_humi = radio.DATA[2] + (radio.DATA[3] << 8);
 	rx_micr = radio.DATA[4] + (radio.DATA[5] << 8);
+	rx_vbat = radio.DATA[6] + (radio.DATA[7] << 8);
+	rx_sample_time = radio.DATA[8];
 
-	sprintf(buff, "%d.%d C", rx_temp/10, rx_temp%10);
+	oled.set2X();
+	sprintf(buff, "%d.%dC  %d%%", rx_temp/10, rx_temp%10, rx_humi/10, rx_humi%10);
 	oled.println(buff);
-	sprintf(buff, "%d.%d Hum", rx_humi/10, rx_humi%10);
-	oled.println(buff);
+
+	oled.set1X();
 	sprintf(buff, "%d Mic.", rx_micr);
 	oled.println(buff);
+	sprintf(buff, "t=%d ms", rx_sample_time);
+	oled.println(buff);
 	sprintf(buff, "RSSI:%d", radio.RSSI);
+	oled.println(buff);
+	sprintf(buff, "VBat: %d.%d V", rx_vbat/1000, (rx_vbat%1000)/10);
 	oled.println(buff);
 
 	sprintf(buff, "%d;%d;%d", rx_temp, rx_humi, rx_micr);
