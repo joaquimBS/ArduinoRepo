@@ -17,8 +17,11 @@
 // #include <Sleep_n0m1.h>
 #include "FlashSpiFifo.h"
 
-#define ENABLE_MIC	digitalWrite(MIC_VCC, HIGH); delay(100)
-#define DISABLE_MIC	digitalWrite(MIC_VCC, LOW)
+#define ENABLE_MIC	analogReference(DEFAULT); digitalWrite(MIC_VCC, HIGH); delay(100)
+#define DISABLE_MIC	analogReference(INTERNAL); digitalWrite(MIC_VCC, LOW)
+
+#define ENABLE_VBAT_DIVISOR	 ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
+#define DISABLE_VBAT_DIVISOR ; // digitalWrite(EN_VBAT_DIV, LOW)
 
 #define WITH_RFM69
 #define WITH_SPIFLASH
@@ -98,6 +101,24 @@ void setup()
 	LED_OFF;
 }
 
+static uint16_t getVbat()
+{
+	analogReference(INTERNAL);	// Referencia interna de 1.1V
+	// delay(1000);
+
+	uint16_t adc_vbat = analogRead(A7);
+
+	for(int i=0; i<10; i++) {
+		adc_vbat = analogRead(A7);
+		delay(1);
+	}
+
+	float vbat = map(adc_vbat, 0, 1023, 0, 1100);	// Passem de la lectura 0-1023 de ADC a mV de 0-1100mV
+	vbat *= 11;		// 11 és el factor de divisió del divisor.
+
+	return (uint16_t)vbat;
+}
+
 #define CYCLES_OF_SLEEP_S   (unsigned int) 10
 #define TIMER_HOLD          (unsigned int) -1
 #define TIMEOUT_TO_SLEEP_MS (unsigned int) 10000
@@ -127,7 +148,7 @@ void loop()
 	else {
 		if(remaining_sleep_cycles == 0) {
 			periodicTask();
-			remaining_sleep_cycles = 5;
+			remaining_sleep_cycles = 10;
 		}
 		else {
 			remaining_sleep_cycles--;
@@ -136,10 +157,10 @@ void loop()
 	}
 }
 
-#define TX_BUFF_LEN	((uint8_t) 6)
+#define TX_BUFF_LEN	((uint8_t) 9)
 void periodicTask()
 {
-	// uint32_t t=millis();
+	uint32_t t = millis();
 
 	uint8_t tx_buff[TX_BUFF_LEN];
 
@@ -150,17 +171,26 @@ void periodicTask()
 	int16_t temp_tx = 0;
 	int16_t humi_tx = 0;
 	uint16_t noise_tx = 0;
+	uint16_t vbat_tx = 0;
+	static uint8_t task_time_ms = 0;
 
 	LED_ON;
 
 	if(DHT.read22(DHT_PIN) == DHTLIB_OK) {
 		temp_tx = DHT.temperature * 10;
+		DEBUG("temp_tx: "); DEBUGLN(temp_tx);
+
 		humi_tx = DHT.humidity * 10;
+		DEBUG("humi_tx: "); DEBUGLN(humi_tx);
 	}
+
+	vbat_tx = getVbat();
+	DEBUG("vbat_tx: "); DEBUGLN(vbat_tx);
 
 	ENABLE_MIC;
 	noise_tx = analogRead(A0);
 	DISABLE_MIC;
+	DEBUG("noise_tx: "); DEBUGLN(noise_tx);
 
 	tx_buff[0] = temp_tx & 0x00FF;
 	tx_buff[1] = (temp_tx >> 8);
@@ -171,19 +201,19 @@ void periodicTask()
 	tx_buff[4] = noise_tx & 0x00FF;
 	tx_buff[5] = (noise_tx >> 8);
 
+	tx_buff[6] = vbat_tx & 0x00FF;
+	tx_buff[7] = (vbat_tx >> 8);
+
+	tx_buff[8] = task_time_ms; // Ha de ser menor que 255
+
 	// radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
 	radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
 
 	LED_OFF;
 
-	// DEBUGLN(DHT.temperature);
-	// DEBUGLN(DHT.humidity);
-	// if(noise_tx < 500) {
-		// DEBUGLN(noise_tx);
-		// delay(500);
-	// }
+	task_time_ms = millis()-t;
 
-	// Serial.println(millis()-t);
+	DEBUGLN(task_time_ms);
 }
 
 void goToSleep()
@@ -196,7 +226,7 @@ void goToSleep()
 	// Enter power down state with ADC and BOD module disabled.
 	// Wake up when wake up pin is low.
 	LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-	// delay(20);
+	// delay(1000);
 	// ZZzzZZzzZZzz
 
 	// Disable external pin interrupt on wake up pin.
