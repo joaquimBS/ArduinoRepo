@@ -12,7 +12,7 @@
 // #include <Arduino_FreeRTOS.h>
 // #include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
 // #include <MemoryFree.h>
-#include "dht.h"
+// #include "dht.h"
 #include "LowPower.h"           // https://github.com/rocketscream/Low-Power
 // #include <Sleep_n0m1.h>
 
@@ -25,6 +25,8 @@
 #include "SSD1306Ascii.h"
 #include "SSD1306AsciiAvrI2c.h"
 SSD1306AsciiAvrI2c oled;
+#define ENABLE_OLED_VCC		digitalWrite(OLED_VCC, HIGH)
+#define DISABLE_OLED_VCC	digitalWrite(OLED_VCC, LOW)
 #endif
 
 #if defined(WITH_RFM69) || defined(WITH_SPIFLASH)
@@ -32,11 +34,11 @@ SSD1306AsciiAvrI2c oled;
 #if defined(WITH_RFM69)
 #include <RFM69.h>            //get it here: https://www.github.com/lowpowerlab/rfm69
 RFM69 radio;
-#define GATEWAYID   1
-#define NETWORKID 100
-#define NODEID 1
-#define FREQUENCY RF69_868MHZ
-#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+	#define GATEWAYID	1
+	#define NETWORKID	100
+	#define NODEID 		1
+	#define FREQUENCY	RF69_868MHZ
+	#define ENCRYPTKEY	"sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
 #endif
 #if defined(WITH_SPIFLASH)
 #include <SPIFlash.h>         //get it here: https://www.github.com/lowpowerlab/spiflash
@@ -44,7 +46,16 @@ SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
 #endif
 #endif
 
-typedef enum {STATE_ON = 0, STATE_POWER_SAVE} t_system_state;
+typedef enum {
+	PS_POWER_SAVE = 0,
+	PS_ON
+} t_power_state;
+
+typedef enum {
+	SS_MAIN_IDLE = 0
+} t_system_state;
+
+volatile t_power_state power_state;
 volatile t_system_state system_state;
 
 typedef enum {CYCLIC = 0, INT_EXT} t_wake_up_cause;
@@ -54,65 +65,139 @@ volatile t_wake_up_cause wake_up_cause;
 #define SERIAL_BR 115200
 
 /* Function prototypes */
-void periodicTask();
-void InitializeRadio();
-void InitializeFlash();
-void InitializeOled();
+void periodic_task();
+void init_io_pins();
+void init_radio();
+void init_flash();
+void init_oled();
+void power_state_on_entry();
+void power_state_power_save_entry();
+void go_to_sleep_1s();
+void wake_up_from_sleep();
 /***********************/
-
 // ========================== End of Header ====================================
+
+/**
+ * This function will be called when the hardware INT1 is triggered.
+ */
+static void rsi_int_1()
+{
+	power_state = STATE_ON;
+	system_state = SS_MAIN_IDLE;
+}
 
 void setup()
 {
 	Serial.begin(SERIAL_BR);
 	while(!Serial);
 
-	for(int p=0; p<PIN_COUNT; p++) {
-		pinMode(p, INPUT);
-		digitalWrite(p, LOW);
-	}
-
-	pinMode(INT_RED, INPUT_PULLUP);
-	pinMode(INFO_LED, OUTPUT);
-	pinMode(A0, INPUT);
-
 	LED_ON;
 
-	InitializeRadio();
-	InitializeFlash();
-	InitializeOled();
+	init_io_pins();
+	init_radio();
+	init_flash();
+	init_oled();
+
+	power_state = STATE_ON;
+	system_state = SS_MAIN_IDLE;
 
 	char buff[50];
-	sprintf(buff, "Receiving at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
+	sprintf(buff, "Receiving at %d MHz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
 	Serial.println(buff);
 
 	LED_OFF;
 }
 
-#define CYCLES_OF_SLEEP_S   (unsigned int) 1
-#define TIMER_HOLD          (unsigned int) -1
-#define TIMEOUT_TO_SLEEP_MS (unsigned int) 10000
-
-static int read_time;
-static int cycles = 0;
-static long timer_to_sleep = TIMER_HOLD;
-
 void loop()
 {
-	if (radio.receiveDone()) {
-		LED_ON;
+	switch (power_state) {
+		case PS_ON:
+			power_state_on_entry();
+			break;
 
-		updateOledData();
+		case PS_POWER_SAVE:
+			power_state_power_save_entry();
+			break;
 
-		LED_OFF;
+		default:
+			delay(100);
 	}
-  //radio.sleep();
-  // LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
 }
 
-void updateOledData()
+void button_pressed_callback()
 {
-	#ifdef USE_OLED
+	power_state = PS_POWER_SAVE;
+}
+
+typedef enum {
+	PB_IDLE = 0,
+	PB_DEBOUCE,
+	PB_PUSH_CONFIRMED
+} t_push_button_state;
+
+/*
+ * This function needs to be called very often.
+ * It implements a FSM IDLE -> DEBOUNCE -> CONFIRM to read a switch value
+ */
+static void read_and_debounce_pushbutton()
+{
+	static t_push_button_state pb_state = PB_IDLE;
+	static unsigned long tick_time = 0;
+
+	switch (pb_state) {
+		case PB_IDLE:
+			if(digitalRead(INT_RED) == PB_PRESSED) {
+				pb_state = PB_DEBOUCE;
+				tick_time = millis();
+			}
+			else {
+				pb_state = PB_IDLE;
+			}
+			break;
+
+		case PB_DEBOUCE:
+			if((millis() - tick_time) > DEBOUNCE_TIME_MS) {
+				pb_state = PB_PUSH_CONFIRMED;
+			}
+			else if(digitalRead(INT_RED) == PB_RELEASED) {
+				pb_state = PB_IDLE;
+			}
+			else {
+				pb_state = PB_DEBOUCE;
+			}
+			break;
+
+		case PB_PUSH_CONFIRMED:
+			if(digitalRead(INT_RED) == PB_RELEASED) {
+				button_pressed_callback();
+				pb_state = PB_IDLE;
+			}
+			else {
+				pb_state = PB_PUSH_CONFIRMED;
+			}
+			break;
+	}
+}
+
+void power_state_power_save_entry()
+{
+	go_to_sleep_1s();
+}
+
+void power_state_on_entry()
+{
+	read_and_debounce_pushbutton();
+
+	if (radio.receiveDone()) {
+		LED_ON;
+		update_oled_view();
+		LED_OFF;
+	}
+}
+
+void update_oled_view()
+{
+#ifdef USE_OLED
 	char buff[16];
 
 	oled.clear();
@@ -149,10 +234,55 @@ void updateOledData()
 	// /* Keep count of the Rx frames */
 	// static long i=0;
 	// oled.println(i++);
-	#endif
+#endif
 }
 
-void InitializeRadio()
+void go_to_sleep_1s()
+{
+	// flash.sleep();   /* Only if it was awake. */
+	if(power_state == PS_ON)
+		radio.sleep();
+		DISABLE_OLED_VCC;
+		SET_DIGITAL_PINS_AS_INPUTS();
+
+		attachInterrupt(digitalPinToInterrupt(INT_RED), rsi_int_1, LOW);
+	}
+
+	/*********************************/
+	LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+	// delay(1000);
+	// ZZzzZZzzZZzz....
+	/*********************************/
+
+	if(power_state == PS_ON) {
+		detachInterrupt(digitalPinToInterrupt(INT_RED));
+		delay(250);
+		while(digitalRead(INT_RED) == LOW);
+
+		// Here we are awake and the pushbutton is un-pressed
+		wake_up_from_sleep();
+	}
+}
+
+/* Wake up routine */
+void wake_up_from_sleep()
+{
+	init_io_pins();
+	init_oled();
+}
+
+void init_io_pins()
+{
+	SET_DIGITAL_PINS_AS_INPUTS();
+
+	// -- Custom IO setup --
+	pinMode(OLED_VCC, OUTPUT);
+	pinMode(INT_RED, INPUT_PULLUP);
+	pinMode(INFO_LED, OUTPUT);
+	pinMode(A0, INPUT);
+}
+
+void init_radio()
 {
 #ifdef WITH_RFM69
 	radio.initialize(FREQUENCY,NODEID,NETWORKID);
@@ -162,7 +292,7 @@ void InitializeRadio()
 #endif
 }
 
-void InitializeFlash()
+void init_flash()
 {
 #ifdef WITH_SPIFLASH
 	if (flash.initialize()) {
@@ -171,14 +301,20 @@ void InitializeFlash()
 #endif
 }
 
-void InitializeOled()
+void init_oled()
 {
 #ifdef USE_OLED
+	ENABLE_OLED_VCC;
+	delay(250);
+
 	oled.begin(&Adafruit128x64, I2C_ADDRESS);
 	oled.setFont(Stang5x7);
 	oled.clear();
 
 	oled.home();
 	oled.set2X();
+
+	oled.println("           ");
+	oled.println("   HOLA!   ");
 #endif
 }
