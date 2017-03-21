@@ -14,7 +14,7 @@ enum {P0, P1, P2_RESERVED, INT_RED, DHT_PIN, OLED_VCC, P6, P7, FLASH_SS, INFO_LE
         } while(0)  // This while is to allow ';' at the end of the macro
 
 
-#define DEBOUNCE_TIME_MS    200
+#define DEBOUNCE_TIME_MS    100
 #define PB_PRESSED          LOW
 #define PB_RELEASED         HIGH
 
@@ -24,7 +24,7 @@ enum {P0, P1, P2_RESERVED, INT_RED, DHT_PIN, OLED_VCC, P6, P7, FLASH_SS, INFO_LE
 #define USE_DEBUG
 
 #if defined(USE_DEBUG)
-    #define DEBUGG(str)   Serial.print(str)
+    #define DEBUG(str)   Serial.print(str)
     #define DEBUGLN(str) Serial.println(str)
 #else
     #define DEBUG(str)

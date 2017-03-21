@@ -72,7 +72,7 @@ void init_flash();
 void init_oled();
 void power_state_on_entry();
 void power_state_power_save_entry();
-void go_to_sleep_1s();
+void go_to_sleep();
 void wake_up_from_sleep();
 /***********************/
 // ========================== End of Header ====================================
@@ -82,7 +82,7 @@ void wake_up_from_sleep();
  */
 static void rsi_int_1()
 {
-	power_state = STATE_ON;
+	power_state = PS_ON;
 	system_state = SS_MAIN_IDLE;
 }
 
@@ -91,14 +91,15 @@ void setup()
 	Serial.begin(SERIAL_BR);
 	while(!Serial);
 
+	init_io_pins();
+
 	LED_ON;
 
-	init_io_pins();
 	init_radio();
 	init_flash();
 	init_oled();
 
-	power_state = STATE_ON;
+	power_state = PS_ON;
 	system_state = SS_MAIN_IDLE;
 
 	char buff[50];
@@ -112,21 +113,25 @@ void loop()
 {
 	switch (power_state) {
 		case PS_ON:
+			LED_ON;
 			power_state_on_entry();
 			break;
 
 		case PS_POWER_SAVE:
+			LED_OFF;
 			power_state_power_save_entry();
 			break;
 
 		default:
 			delay(100);
+			break;
 	}
 }
 
 void button_pressed_callback()
 {
 	power_state = PS_POWER_SAVE;
+	DEBUGLN("button_pressed_callback");
 }
 
 typedef enum {
@@ -181,7 +186,17 @@ static void read_and_debounce_pushbutton()
 
 void power_state_power_save_entry()
 {
-	go_to_sleep_1s();
+	radio.sleep();
+	DISABLE_OLED_VCC;
+
+	pinMode(OLED_VCC, INPUT);
+	pinMode(INFO_LED, INPUT);
+
+	delay(500);		// To make sure no bouncing when INT attached.
+
+	attachInterrupt(digitalPinToInterrupt(INT_RED), rsi_int_1, LOW);
+
+	go_to_sleep();
 }
 
 void power_state_on_entry()
@@ -215,7 +230,7 @@ void update_oled_view()
 	rx_sample_time = radio.DATA[8];
 
 	oled.set2X();
-	sprintf(buff, "%d.%dC  %d%%", rx_temp/10, rx_temp%10, rx_humi/10, rx_humi%10);
+	sprintf(buff, "%d.%dC  %d%%", rx_temp/10, rx_temp%10, rx_humi/10);
 	oled.println(buff);
 
 	oled.set1X();
@@ -237,26 +252,19 @@ void update_oled_view()
 #endif
 }
 
-void go_to_sleep_1s()
+void go_to_sleep()
 {
 	// flash.sleep();   /* Only if it was awake. */
-	if(power_state == PS_ON)
-		radio.sleep();
-		DISABLE_OLED_VCC;
-		SET_DIGITAL_PINS_AS_INPUTS();
-
-		attachInterrupt(digitalPinToInterrupt(INT_RED), rsi_int_1, LOW);
-	}
 
 	/*********************************/
-	LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+	while(power_state == PS_POWER_SAVE)
+		LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
 	// delay(1000);
 	// ZZzzZZzzZZzz....
 	/*********************************/
 
 	if(power_state == PS_ON) {
 		detachInterrupt(digitalPinToInterrupt(INT_RED));
-		delay(250);
 		while(digitalRead(INT_RED) == LOW);
 
 		// Here we are awake and the pushbutton is un-pressed
@@ -267,7 +275,9 @@ void go_to_sleep_1s()
 /* Wake up routine */
 void wake_up_from_sleep()
 {
-	init_io_pins();
+	pinMode(OLED_VCC, OUTPUT);
+	pinMode(INFO_LED, OUTPUT);
+
 	init_oled();
 }
 
@@ -305,7 +315,7 @@ void init_oled()
 {
 #ifdef USE_OLED
 	ENABLE_OLED_VCC;
-	delay(250);
+	delay(500);
 
 	oled.begin(&Adafruit128x64, I2C_ADDRESS);
 	oled.setFont(Stang5x7);
