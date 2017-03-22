@@ -55,14 +55,14 @@ typedef enum {
 	SS_MAIN_IDLE = 0
 } t_system_state;
 
+typedef enum {
+	CYCLIC = 0,
+	INT_EXT
+} t_wake_up_cause;
+
 volatile t_power_state power_state;
 volatile t_system_state system_state;
-
-typedef enum {CYCLIC = 0, INT_EXT} t_wake_up_cause;
 volatile t_wake_up_cause wake_up_cause;
-
-// Custom defines
-#define SERIAL_BR 115200
 
 /* Function prototypes */
 void periodic_task();
@@ -76,6 +76,14 @@ void go_to_sleep();
 void wake_up_from_sleep();
 /***********************/
 // ========================== End of Header ====================================
+
+/**
+ * This function should never be called. It is reserved to RFM69W module
+ */
+static void rsi_int_0()
+{
+	/* Do nothing */
+}
 
 /**
  * This function will be called when the hardware INT1 is triggered.
@@ -156,7 +164,7 @@ static void read_and_debounce_pushbutton()
 				tick_time = millis();
 			}
 			else {
-				pb_state = PB_IDLE;
+				/* Keep the current state */
 			}
 			break;
 
@@ -168,7 +176,7 @@ static void read_and_debounce_pushbutton()
 				pb_state = PB_IDLE;
 			}
 			else {
-				pb_state = PB_DEBOUCE;
+				/* Keep the current state */
 			}
 			break;
 
@@ -178,7 +186,7 @@ static void read_and_debounce_pushbutton()
 				pb_state = PB_IDLE;
 			}
 			else {
-				pb_state = PB_PUSH_CONFIRMED;
+				/* Keep the current state */
 			}
 			break;
 	}
@@ -186,21 +194,19 @@ static void read_and_debounce_pushbutton()
 
 void power_state_power_save_entry()
 {
-	radio.sleep();
-	DISABLE_OLED_VCC;
-
-	pinMode(OLED_VCC, INPUT);
-	pinMode(INFO_LED, INPUT);
-
-	delay(500);		// To make sure no bouncing when INT attached.
-
-	attachInterrupt(digitalPinToInterrupt(INT_RED), rsi_int_1, LOW);
-
 	go_to_sleep();
 }
 
 void power_state_on_entry()
 {
+	/*
+	switch (system_state) {
+		case SS_MAIN_IDLE:
+			periodic_task();
+
+	}
+	*/
+
 	read_and_debounce_pushbutton();
 
 	if (radio.receiveDone()) {
@@ -255,21 +261,27 @@ void update_oled_view()
 void go_to_sleep()
 {
 	// flash.sleep();   /* Only if it was awake. */
+	radio.sleep();
+	DISABLE_OLED_VCC;
 
+	pinMode(OLED_VCC, INPUT);
+	pinMode(INFO_LED, INPUT);
+
+	delay(500);		// To make sure no bouncing when INT attached.
+
+	attachInterrupt(digitalPinToInterrupt(INT_RED), rsi_int_1, LOW);
 	/*********************************/
 	while(power_state == PS_POWER_SAVE)
 		LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-	// delay(1000);
+		// delay(1000);
 	// ZZzzZZzzZZzz....
 	/*********************************/
+	detachInterrupt(digitalPinToInterrupt(INT_RED));
 
-	if(power_state == PS_ON) {
-		detachInterrupt(digitalPinToInterrupt(INT_RED));
-		while(digitalRead(INT_RED) == LOW);
+	while(digitalRead(INT_RED) == LOW);
 
-		// Here we are awake and the pushbutton is un-pressed
-		wake_up_from_sleep();
-	}
+	// Here we are awake and the pushbutton is un-pressed
+	wake_up_from_sleep();
 }
 
 /* Wake up routine */

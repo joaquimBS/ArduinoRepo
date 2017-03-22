@@ -14,6 +14,8 @@ enum {P0, P1, P2_RESERVED, INT_RED, DHT_PIN, OLED_VCC, P6, P7, FLASH_SS, INFO_LE
         } while(0)  // This while is to allow ';' at the end of the macro
 
 
+#define SERIAL_BR 115200
+
 #define DEBOUNCE_TIME_MS    100
 #define PB_PRESSED          LOW
 #define PB_RELEASED         HIGH
