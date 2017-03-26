@@ -246,7 +246,7 @@ void update_oled_view()
 	oled.println(buff);
 	sprintf(buff, "RSSI:%d", radio.RSSI);
 	oled.println(buff);
-	sprintf(buff, "VBat: %d.%d V", rx_vbat/1000, (rx_vbat%1000)/10);
+	sprintf(buff, "VBat: %d.%.2d V", rx_vbat/1000, (rx_vbat%1000)/10);
 	oled.println(buff);
 
 	sprintf(buff, "%d;%d;%d", rx_temp, rx_humi, rx_micr);
