@@ -3,7 +3,7 @@
 // #include <avr/sleep.h>
 
 // Arduino libraries
-// #include <SoftwareSerial.h>
+#include <SoftwareSerial.h>
 
 // Custom Arduino libraries
 #include "../lib/project_cfg.h"
@@ -17,6 +17,7 @@
 #include <I2Cdev.h>
 #include <MPU6050_6Axis_MotionApps20.h>
 #include <LiquidCrystal_I2C.h>
+#include <TinyGPS++.h>
 
 /* Custom defines */
 #define SERIAL_BR 115200
@@ -61,6 +62,9 @@ struct ypr_degrees {
     float roll;
 } ypr_deg;
 
+SoftwareSerial gpsSerial(5, 4); // RX, TX
+TinyGPSPlus gps;
+#define UTC_OFFSET  (uint8_t)2
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -74,88 +78,128 @@ void dmpDataReady() {
 // ========================== End of Header ====================================
 void setup()
 {
-	Serial.begin(SERIAL_BR);
-	while(!Serial);
+  Serial.begin(SERIAL_BR);
+  while(!Serial);
 
-	Wire.begin();
-    Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
+  gpsSerial.begin(9600);
 
-	for(int p=0; p<PINº_COUNT; p++) {
-		pinMode(p, INPUT);
-		digitalWrite(p, LOW);
-	}
+  Wire.begin();
+  Wire.setClock(400000); // 400kHz I2C clock. Comment this line if having compilation difficulties
 
-    pinMode(INFO_LED, OUTPUT);
+  for(int p=0; p<PIN_COUNT; p++) {
+    pinMode(p, INPUT);
+    digitalWrite(p, LOW);
+  }
 
-    LED_ON;
-    accel_init();
-    LED_OFF;
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
 
-    lcd.init();
-    // Print a message to the LCD.
-    lcd.backlight();
-    lcd.setBacklight(128);
-    lcd.print("Hello, world!");
+  // lcd.setBacklight(128);
+  // lcd.print("Hello, world!");
+  // delay(1000);
+  // lcd.clear();
+
+  pinMode(INFO_LED, OUTPUT);
+
+  LED_ON;
+  accel_init();
+  LED_OFF;
 }
 
+// #define gpsSerial Serial
+char activity[2] = {'|','-'};
+uint8_t activity_counter = 0;
 void loop()
 {
-    static long t=millis();
-    char buff[16];
+    static long t333=millis();
+    static long t1000=millis();
+    static bool led_state = false;
+
+    char buff[20];
+
+    while(gpsSerial.available()) {
+      // Serial.write(gpsSerial.read());
+      gps.encode(gpsSerial.read());
+    }
+
+    if( (millis() - t1000) > 1000) {
+      t1000=millis();
+
+      sprintf(buff, "%d %d", (int)gps.passedChecksum(), (int)gps.failedChecksum());
+      DEBUGLN(buff);
+
+      led_state = !led_state;
+      digitalWrite(INFO_LED, led_state);
+
+      lcd.setCursor(1, 0);
+      sprintf(buff, "Sat=%02d %02d:%02d:%02d", (int)gps.satellites.value(), gps.time.hour()+UTC_OFFSET, gps.time.minute(), gps.time.second());
+      lcd.print(buff);
+
+      // lcd.setCursor(0,1);
+      // sprintf(buff, "Kmh=%03d Alt=%dm", (int)gps.speed.kmph(), (int)gps.altitude.meters());
+      // lcd.print(buff);
+    }
 
     // t=micros();
-    accel_tick();
+    // accel_tick();
     // int res = micros()-t;
 
     // if(res > 100) {
     //     DEBUG(millis()); DEBUG("\t"); DEBUG(res); DEBUGLN("us");
     // }
 
-    if( (millis() - t) > 250) {
-        t=millis();
+    if( (millis() - t333) > 333) {
+        t333=millis();
 
+        lcd.setCursor(0, 0);
+        static uint32_t stat = gps.passedChecksum();
+        uint32_t cur_stat = gps.passedChecksum();
+        if(cur_stat > stat) {
+          stat = cur_stat;
+          lcd.setCursor(0, 0);
+          lcd.write(activity[(activity_counter++)%2]);
+        }
+
+        if(false)
         {
             static int8_t old_angle = 0;
-            int8_t cur_angle = map(abs(ypr_deg.roll), 0, 80, 0, 8);
+            // int8_t cur_angle = map(abs(ypr_deg.roll), 0, 80, 0, 8);
+            int8_t cur_angle = map(ypr_deg.roll, -80, 80, -8, 8);
+            // int8_t cur_angle = ypr_deg.roll/10;
 
-            // sprintf(buff, "%d %d\t", old_angle, cur_angle);
-            // DEBUG(buff);
-            // DEBUGLN(ypr_deg.roll);
-
+            // if(ypr_deg.roll < 0)
+            //   cur_angle = -cur_angle;
 
             mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-            lcd.home();
-            lcd.clear();
-            lcd.print(az);
+            lcd.setCursor(0,1);
+            // sprintf(buff, "Kmh=%03d Alt=%dm", (int)gps.speed.kmph(), (int)gps.altitude.meters());
+            // sprintf(buff, "%05d", az);
+            // lcd.print(buff);
 
             if(old_angle != cur_angle) {
-                lcd.home();
-                lcd.clear();
-                memset(buff, 0, 16);
+                // lcd.home();
+                // lcd.clear();
+                lcd.setCursor(0,1);
+                memset(buff, " ", 16);
+                lcd.print(buff);
 
-                if(ypr_deg.roll < 0) {
-                    /* Left */
-                    lcd.setCursor(8-cur_angle,0);
-                    memset(buff, '*', cur_angle);
-                    lcd.print(buff);
+                if(cur_angle > 0) {
+                  /* Right */
+                  lcd.setCursor(8,1);
+                }
+                else if(cur_angle < 0) {
+                  /* Left */
+                  lcd.setCursor(8+cur_angle,1);   // cur_angle is negative
                 }
                 else {
-                    /* Right */
-                    lcd.setCursor(8,0);
-                    memset(buff, '*', cur_angle);
-                    lcd.print(buff);
+                  // lcd.setCursor(0,1);
                 }
+                memset(buff, '*', abs(cur_angle));
+                lcd.print(buff);
                 old_angle = cur_angle;
             }
         }
-    }
-
-    static long led_tick = 0;
-    if( (millis() - led_tick) > 1000) {
-        led_tick = millis();
-        static bool led_state = false;
-        led_state = !led_state;
-        digitalWrite(INFO_LED, led_state);
     }
 }
 
@@ -173,7 +217,7 @@ void accel_tick()
         if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
             // reset so we can continue cleanly
             mpu.resetFIFO();
-            DEBUGLN(F("FIFO overflow!"));
+            // DEBUGLN(F("FIFO overflow!"));
 
         // otherwise, check for DMP data ready interrupt (this should happen frequently)
         } else if (mpuIntStatus & 0x02) {
