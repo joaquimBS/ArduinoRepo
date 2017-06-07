@@ -25,6 +25,7 @@
 
 #define WITH_RFM69
 #define WITH_SPIFLASH
+#define MAGIC_VBAT_OFFSET_MV	-40
 
 #if defined(WITH_RFM69) || defined(WITH_SPIFLASH)
 	#include <SPI.h>                //comes with Arduino IDE (www.arduino.cc)
@@ -101,10 +102,9 @@ void setup()
 	LED_OFF;
 }
 
-static uint16_t getVbat()
+static uint16_t get_vbat_mv()
 {
 	analogReference(INTERNAL);	// Referencia interna de 1.1V
-	// delay(1000);
 
 	uint16_t adc_vbat = analogRead(A7);
 
@@ -115,6 +115,7 @@ static uint16_t getVbat()
 
 	float vbat = map(adc_vbat, 0, 1023, 0, 1100);	// Passem de la lectura 0-1023 de ADC a mV de 0-1100mV
 	vbat *= 11;		// 11 és el factor de divisió del divisor.
+	vbat = vbat + MAGIC_VBAT_OFFSET_MV;
 
 	return (uint16_t)vbat;
 }
@@ -184,7 +185,7 @@ void periodicTask()
 		DEBUG("humi_tx: "); DEBUGLN(humi_tx);
 	}
 
-	vbat_tx = getVbat();
+	vbat_tx = get_vbat_mv();
 	DEBUG("vbat_tx: "); DEBUGLN(vbat_tx);
 
 	ENABLE_MIC;
@@ -204,7 +205,7 @@ void periodicTask()
 	tx_buff[6] = vbat_tx & 0x00FF;
 	tx_buff[7] = (vbat_tx >> 8);
 
-	tx_buff[8] = task_time_ms; // Ha de ser menor que 255
+	tx_buff[8] = task_time_ms; // Ha de ser menor que 255, sinó overflow
 
 	// radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
 	radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
