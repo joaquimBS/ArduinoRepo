@@ -4,7 +4,7 @@
 #include "Arduino.h"
 
 // I/O Pins
-enum {P0, P1, P2_RESERVED, INT_RED, DHT_PIN, OLED_VCC, P6, P7, FLASH_SS, INFO_LED, P10, P11, P12, P13, PIN_COUNT};	/* Moteino */
+enum {P0, P1, P2_RESERVED, INT_RED, DHT_PIN, OLED_VCC, P6, P7, SS_RX, SS_TX, P10, P11, P12, INFO_LED, PIN_COUNT};	/* Moteino */
 
 #define SET_DIGITAL_PINS_AS_INPUTS()        \
         uint8_t p;                          \
@@ -13,6 +13,7 @@ enum {P0, P1, P2_RESERVED, INT_RED, DHT_PIN, OLED_VCC, P6, P7, FLASH_SS, INFO_LE
             digitalWrite(p, LOW);           \
         } while(0)  // This while is to allow ';' at the end of the macro
 
+#define DELTA_TIME(in_time) (millis() - in_time)
 
 #define SERIAL_BR 115200
 

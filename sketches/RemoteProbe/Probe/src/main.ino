@@ -15,7 +15,12 @@
 #include "dht.h"
 #include "LowPower.h"           // https://github.com/rocketscream/Low-Power
 // #include <Sleep_n0m1.h>
-#include "FlashSpiFifo.h"
+// #include "FlashSpiFifo.h"
+
+#include <SPI.h>           //comes with Arduino IDE (www.arduino.cc)
+#include <RFM69.h>         //get it here: https://github.com/lowpowerlab/RFM69
+#include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
+#include <RFM69_OTA.h>     //get it here: https://github.com/lowpowerlab/RFM69
 
 #define ENABLE_MIC	analogReference(DEFAULT); digitalWrite(MIC_VCC, HIGH); delay(100)
 #define DISABLE_MIC	analogReference(INTERNAL); digitalWrite(MIC_VCC, LOW)
@@ -27,20 +32,25 @@
 #define WITH_SPIFLASH
 #define MAGIC_VBAT_OFFSET_MV	-40
 
-#if defined(WITH_RFM69) || defined(WITH_SPIFLASH)
-	#include <SPI.h>                //comes with Arduino IDE (www.arduino.cc)
-	#if defined(WITH_RFM69)
-		#include <RFM69.h>            //get it here: https://www.github.com/lowpowerlab/rfm69
-		RFM69 radio;
-		#define GATEWAYID   1
-		#define NETWORKID 100
-		#define NODEID 11
-		#define FREQUENCY RF69_868MHZ
-		#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
-	#endif
-	#if defined(WITH_SPIFLASH)
-		#include "FlashSpiFifo.h"
-	#endif
+
+#if defined(WITH_RFM69)
+	RFM69 radio;
+	#define GATEWAYID   1
+	#define NETWORKID 100
+	#define NODEID 11
+	#define FREQUENCY RF69_868MHZ
+	#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+#endif
+
+#if defined(WITH_SPIFLASH)
+	//*****************************************************************************************************************************
+	// flash(SPI_CS, MANUFACTURER_ID)
+	// SPI_CS          - CS pin attached to SPI flash chip (8 in case of Moteino)
+	// MANUFACTURER_ID - OPTIONAL, 0x1F44 for adesto(ex atmel) 4mbit flash
+	//                             0xEF30 for windbond 4mbit flash
+	//                             0xEF40 for windbond 16/64mbit flash
+	//*****************************************************************************************************************************
+	SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
 #endif
 
 typedef enum {STATE_ON = 0, STATE_POWER_SAVE} t_system_state;
@@ -54,7 +64,7 @@ volatile t_wake_up_cause wake_up_cause;
 #define DHTTYPE   DHT22   // DHT 22  (AM2302), AM2321
 dht DHT;
 
-FlashSpiFifo ffifo;
+// FlashSpiFifo ffifo;
 
 /* Function prototypes */
 void periodicTask();
@@ -90,10 +100,15 @@ void setup()
 	radio.initialize(FREQUENCY,NODEID,NETWORKID);
 	radio.setHighPower();
 	radio.encrypt(ENCRYPTKEY);
-	radio.sleep();
+	// radio.sleep();
 	#endif
 
-	ffifo.init();
+	if (flash.initialize())
+    	Serial.println("SPI Flash Init OK!");
+  	else
+    	Serial.println("SPI Flash Init FAIL!");
+
+	// ffifo.init();
 
 	char buff[50];
 	sprintf(buff, "Transmitting at %d Mhz...", FREQUENCY==RF69_433MHZ ? 433 : FREQUENCY==RF69_868MHZ ? 868 : 915);
@@ -135,6 +150,10 @@ uint8_t remaining_sleep_cycles = 0;
 
 void loop()
 {
+	if (radio.receiveDone()) {
+		CheckForWirelessHEX(radio, flash, false);
+	}
+
 	if(wake_up_cause == INT_EXT) {
 		// if(timer_to_sleep == TIMER_HOLD) {
 		// 	timer_to_sleep = millis();
@@ -149,7 +168,7 @@ void loop()
 	else {
 		if(remaining_sleep_cycles == 0) {
 			periodicTask();
-			remaining_sleep_cycles = 10;
+			remaining_sleep_cycles = 60;
 		}
 		else {
 			remaining_sleep_cycles--;
@@ -158,7 +177,7 @@ void loop()
 	}
 }
 
-#define TX_BUFF_LEN	((uint8_t) 9)
+#define TX_BUFF_LEN	((uint8_t) 10)
 void periodicTask()
 {
 	uint32_t t = millis();
@@ -170,28 +189,33 @@ void periodicTask()
 	// ffifo.push(fd);
 
 	int16_t temp_tx = 0;
+	static int16_t last_temp_tx = 0;
 	int16_t humi_tx = 0;
 	uint16_t noise_tx = 0;
 	uint16_t vbat_tx = 0;
 	static uint8_t task_time_ms = 0;
+	uint8_t on_off_tx = 0;
 
 	LED_ON;
 
 	if(DHT.read22(DHT_PIN) == DHTLIB_OK) {
 		temp_tx = DHT.temperature * 10;
 		DEBUG("temp_tx: "); DEBUGLN(temp_tx);
-
 		humi_tx = DHT.humidity * 10;
 		DEBUG("humi_tx: "); DEBUGLN(humi_tx);
 	}
 
+	on_off_tx = (temp_tx < last_temp_tx);
+	DEBUG("on_off_tx: "); DEBUGLN(on_off_tx);
+	last_temp_tx = temp_tx;
+
 	vbat_tx = get_vbat_mv();
 	DEBUG("vbat_tx: "); DEBUGLN(vbat_tx);
 
-	ENABLE_MIC;
-	noise_tx = analogRead(A0);
-	DISABLE_MIC;
-	DEBUG("noise_tx: "); DEBUGLN(noise_tx);
+	// ENABLE_MIC;
+	// noise_tx = analogRead(A0);
+	// DISABLE_MIC;
+	// DEBUG("noise_tx: "); DEBUGLN(noise_tx);
 
 	tx_buff[0] = temp_tx & 0x00FF;
 	tx_buff[1] = (temp_tx >> 8);
@@ -207,6 +231,8 @@ void periodicTask()
 
 	tx_buff[8] = task_time_ms; // Ha de ser menor que 255, sinó overflow
 
+	tx_buff[9] = on_off_tx;
+
 	// radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
 	radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
 
@@ -220,7 +246,7 @@ void periodicTask()
 void goToSleep()
 {
 	// flash.sleep();   /* Only if it was awake. */
-	radio.sleep();
+	// radio.sleep();
 	wake_up_cause = CYCLIC;
 
 	// attachInterrupt(digitalPinToInterrupt(INT_RED), RSI_Red, LOW);

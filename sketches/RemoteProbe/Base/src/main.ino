@@ -3,7 +3,7 @@
 // #include <avr/sleep.h>
 
 // Arduino libraries
-// #include <SoftwareSerial.h>
+#include <SoftwareSerial.h>
 
 // Custom Arduino libraries
 #include "../lib/project_cfg.h"
@@ -45,6 +45,9 @@ RFM69 radio;
 SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
 #endif
 #endif
+
+#define ESP8266_BR	115200
+SoftwareSerial serial_esp8266(SS_RX, SS_TX); // RX, TX
 
 typedef enum {
 	PS_POWER_SAVE = 0,
@@ -101,6 +104,9 @@ void setup()
 
 	init_io_pins();
 
+	serial_esp8266.begin(ESP8266_BR);
+	while(!serial_esp8266);
+
 	LED_ON;
 
 	init_radio();
@@ -121,12 +127,10 @@ void loop()
 {
 	switch (power_state) {
 		case PS_ON:
-			LED_ON;
 			power_state_on_entry();
 			break;
 
 		case PS_POWER_SAVE:
-			LED_OFF;
 			power_state_power_save_entry();
 			break;
 
@@ -138,8 +142,13 @@ void loop()
 
 void button_pressed_callback()
 {
-	power_state = PS_POWER_SAVE;
 	DEBUGLN("button_pressed_callback");
+
+	LED_ON;
+
+	update_oled_view();
+
+	LED_OFF;
 }
 
 typedef enum {
@@ -199,14 +208,6 @@ void power_state_power_save_entry()
 
 void power_state_on_entry()
 {
-	/*
-	switch (system_state) {
-		case SS_MAIN_IDLE:
-			periodic_task();
-
-	}
-	*/
-
 	read_and_debounce_pushbutton();
 
 	if (radio.receiveDone()) {
@@ -221,26 +222,34 @@ void update_oled_view()
 #ifdef USE_OLED
 	char buff[16];
 
-	oled.clear();
-
 	int16_t rx_temp = 0;
 	int16_t rx_humi = 0;
 	uint16_t rx_micr = 0;
 	uint16_t rx_vbat = 0;
 	uint8_t rx_sample_time = 0;
+	uint8_t rx_on_off = 0;
+	static uint16_t rx_on_off_acum = 0;
 
 	rx_temp = radio.DATA[0] + (radio.DATA[1] << 8);
 	rx_humi = radio.DATA[2] + (radio.DATA[3] << 8);
 	rx_micr = radio.DATA[4] + (radio.DATA[5] << 8);
 	rx_vbat = radio.DATA[6] + (radio.DATA[7] << 8);
 	rx_sample_time = radio.DATA[8];
+	rx_on_off = radio.DATA[9];
 
+	if((rx_temp == 0 ) && (rx_humi == 0)) {
+		return;
+	}
+
+	oled.clear();
 	oled.set2X();
-	sprintf(buff, "%d.%dC  %d%%", rx_temp/10, rx_temp%10, rx_humi/10);
+
+	sprintf(buff, "%d.%dC  %d%%", rx_temp/10, abs(rx_temp)%10, rx_humi/10);
 	oled.println(buff);
 
 	oled.set1X();
-	sprintf(buff, "%d Mic.", rx_micr);
+	rx_on_off_acum += rx_on_off;
+	sprintf(buff, "%d (Acum:%d) OnOff", rx_on_off, rx_on_off_acum);
 	oled.println(buff);
 	sprintf(buff, "t=%d ms", rx_sample_time);
 	oled.println(buff);
@@ -251,6 +260,49 @@ void update_oled_view()
 
 	sprintf(buff, "%d;%d;%d", rx_temp, rx_humi, rx_micr);
 	DEBUGLN(buff);
+
+	serial_esp8266.print(F("AT+CIPSTART=\"TCP\",\"api.thingspeak.com\",80\r\n"));
+	delay(2000);
+
+	{
+		String get_str("GET /update?api_key=CBJ575ETWD8PGJSP");
+
+		get_str.concat("&field1=");
+		get_str.concat(String((rx_vbat/1000.0), 2));
+
+		get_str.concat("&field2=");
+		get_str.concat(String((rx_temp/10.0), 1));
+
+		get_str.concat("&field3=");
+		get_str.concat(String((rx_humi/10.0), 1));
+
+		get_str.concat("&field4=");
+		get_str.concat(rx_on_off);
+
+		get_str.concat(" HTTP/1.1\r\n");
+
+		String host_str("Host: api.thingspeak.com\r\n");
+		String close_str("Connection: close\r\n\r\n\r\n");
+
+		serial_esp8266.print(F("AT+CIPSEND="));
+		// Serial.print("AT+CIPSEND=");
+		serial_esp8266.print(get_str.length() + host_str.length() + close_str.length());
+		// Serial.print(get_str.length() + host_str.length() + close_str.length());
+		serial_esp8266.print("\r\n");
+		// Serial.print("\r\n");
+		delay(500);
+
+		serial_esp8266.print(get_str);
+		DEBUGLN(get_str);
+		delay(500);
+
+		serial_esp8266.print(host_str);
+		DEBUGLN(host_str);
+		delay(500);
+
+		serial_esp8266.print(close_str);
+		DEBUGLN(close_str);
+	}
 
 	// /* Keep count of the Rx frames */
 	// static long i=0;
@@ -302,6 +354,8 @@ void init_io_pins()
 	pinMode(INT_RED, INPUT_PULLUP);
 	pinMode(INFO_LED, OUTPUT);
 	pinMode(A0, INPUT);
+	pinMode(SS_TX, OUTPUT);
+	pinMode(SS_RX, INPUT);
 }
 
 void init_radio()

@@ -65,7 +65,6 @@ struct ypr_degrees {
 SoftwareSerial gpsSerial(5, 4); // RX, TX
 TinyGPSPlus gps;
 #define UTC_OFFSET  (uint8_t)2
-
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
 // ================================================================
@@ -110,13 +109,14 @@ void setup()
 // #define gpsSerial Serial
 char activity[2] = {'|','-'};
 uint8_t activity_counter = 0;
+char buff[17];
 void loop()
 {
     static long t333=millis();
     static long t1000=millis();
-    static bool led_state = false;
+    static long t25=millis();
 
-    char buff[20];
+    static bool led_state = false;
 
     while(gpsSerial.available()) {
       // Serial.write(gpsSerial.read());
@@ -126,15 +126,17 @@ void loop()
     if( (millis() - t1000) > 1000) {
       t1000=millis();
 
-      sprintf(buff, "%d %d", (int)gps.passedChecksum(), (int)gps.failedChecksum());
-      DEBUGLN(buff);
+      float stats = (float)((gps.passedChecksum()*1000.0) / (gps.failedChecksum()*1000.0));
+      // sprintf(buff, "%d",  (int)(stats*1000.0));
+      DEBUGLN(stats);
+      // DEBUGLN(buff);
 
       led_state = !led_state;
       digitalWrite(INFO_LED, led_state);
 
-      lcd.setCursor(1, 0);
-      sprintf(buff, "Sat=%02d %02d:%02d:%02d", (int)gps.satellites.value(), gps.time.hour()+UTC_OFFSET, gps.time.minute(), gps.time.second());
-      lcd.print(buff);
+    //   lcd.setCursor(1, 0);
+    //   sprintf(buff, "Sat=%02d %02d:%02d:%02d", (int)gps.satellites.value(), gps.time.hour()+UTC_OFFSET, gps.time.minute(), gps.time.second());
+    //   lcd.print(buff);
 
       // lcd.setCursor(0,1);
       // sprintf(buff, "Kmh=%03d Alt=%dm", (int)gps.speed.kmph(), (int)gps.altitude.meters());
@@ -149,7 +151,13 @@ void loop()
     //     DEBUG(millis()); DEBUG("\t"); DEBUG(res); DEBUGLN("us");
     // }
 
-    if( (millis() - t333) > 333) {
+    if( (millis() - t25) > 50) {
+      t25=millis();
+      accel_tick();
+
+    }
+
+    if( (millis() - t333) > 250) {
         t333=millis();
 
         lcd.setCursor(0, 0);
@@ -161,7 +169,7 @@ void loop()
           lcd.write(activity[(activity_counter++)%2]);
         }
 
-        if(false)
+        if(true)
         {
             static int8_t old_angle = 0;
             // int8_t cur_angle = map(abs(ypr_deg.roll), 0, 80, 0, 8);
@@ -171,7 +179,7 @@ void loop()
             // if(ypr_deg.roll < 0)
             //   cur_angle = -cur_angle;
 
-            mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+            // mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
             lcd.setCursor(0,1);
             // sprintf(buff, "Kmh=%03d Alt=%dm", (int)gps.speed.kmph(), (int)gps.altitude.meters());
             // sprintf(buff, "%05d", az);
@@ -181,7 +189,7 @@ void loop()
                 // lcd.home();
                 // lcd.clear();
                 lcd.setCursor(0,1);
-                memset(buff, " ", 16);
+                memset(buff, ".", 16);
                 lcd.print(buff);
 
                 if(cur_angle > 0) {
@@ -233,10 +241,10 @@ void accel_tick()
 
             // display YPR
             mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetAccel(&aa, fifoBuffer);
+            // mpu.dmpGetAccel(&aa, fifoBuffer);
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
+            // mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
 
             ypr_deg.yaw = ypr[0] * 180/M_PI;
             ypr_deg.pitch = ypr[1] * 180/M_PI;
