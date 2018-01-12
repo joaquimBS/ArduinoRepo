@@ -1,16 +1,26 @@
 19200
 
-AT					// Test
-AT+CWQAP			// Disconnect
-AT+CWLAP				// List AP
-AT+CWJAP="MOVISTAR_B8E0","vEEVqnsVXAJmJPvvqxqq"	// Join AP
-AT+CWJAP="MOVISTAR_B8E0","vEEVqnsVXAJmJPvvqxqq"	// Join AP
-AT+CWJAP="MOVISTAR_B8E0","vEEVqnsVXAJmJPvvqxqq"	// Join AP
-AT+CWJAP="MOVISTAR_B8E0","vEEVqnsVXAJmJPvvqxqq"	// Join AP
-				
-AT+CIFSR				// Retorna IPs
-AT+CIPMUX=1				// Enable multiple connections
-AT+CIPSTART=4,"TCP","www.google.com",80	
+// Test
+AT
 
+// Disconnect
+AT+CWQAP
+
+// List APs
+AT+CWLAP
+
+// Join AP
+AT+CWJAP="MOVISTAR_B8E0","vEEVqnsVXAJmJPvvqxqq"
+
+// Get IP addr
+AT+CIFSR
+
+// Enable multiple connections
+AT+CIPMUX=1
+
+// Connects to host (and waits for payload)
+AT+CIPSTART=4,"TCP","www.google.com",80
+
+// Send payload
 GET / HTTP/1.1[ENTER]
 Host: www.google.com[ENTER][ENTER][ENTER]
