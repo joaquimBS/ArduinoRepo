@@ -12,6 +12,8 @@
 #ifndef THERMOSTAT_H
 #define THERMOSTAT_H
 
+#include "Arduino.h"
+
 #define TurnHeatON()	{isHeatOn=true; digitalWrite(RELE_PIN, isHeatOn);}
 #define TurnHeatOFF()	{isHeatOn=false; digitalWrite(RELE_PIN, isHeatOn);}
 
@@ -19,7 +21,27 @@
 #include "dht.h"			// https://github.com/RobTillaart/Arduino/tree/master/libraries/DHTlib
 #include "Sleep_n0m1.h"		// https://github.com/n0m1/Sleep_n0m1
 #include "RTClib.h"			// https://github.com/adafruit/RTClib
-// #include "IRremote.h"		// https://github.com/z3t0/Arduino-IRremote
+
+// I/O Pins
+enum {
+    D0,
+    D1,
+    D2_RESERVED_RADIO,
+    BUTTON_IN,
+    RELAY_TRIGGER,
+    EN_VBAT_DIV,
+    DHT_PIN,
+    OLED_VCC,
+    FLASH_SS,
+    INFO_LED,
+    D10_RESERVED_RADIO,
+    D11_RESERVED_RADIO,
+    D12_RESERVED_RADIO,
+    D13_RESERVED_RADIO,
+    PIN_COUNT
+};	/* Moteino */
+
+
 
 // Pinout
 // #define PIN0  0		// Rx

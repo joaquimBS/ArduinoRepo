@@ -8,6 +8,8 @@ dht DHT;
 Sleep sleep;
 RTC_DS1307 rtc;
 
+void goToSleep(unsigned long ms);
+
 class LCD_Manager {
 
 public:
