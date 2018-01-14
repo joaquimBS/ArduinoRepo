@@ -1,439 +1,485 @@
-#include <SPI.h>
-#include <SD.h>
-#include <EEPROM.h>
+// AVR Libraries
+// #include <avr/power.h>
+// #include <avr/sleep.h>
 
+// Arduino libraries
+// #include <SoftwareSerial.h>
+
+// Custom Arduino libraries
 #include "Thermostat.h"
+// #include "RTClib.h"         // https://github.com/adafruit/RTClib
+// #include "IRremote.h"       // https://github.com/z3t0/Arduino-IRremote
+// #include <Arduino_FreeRTOS.h>
+// #include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
+// #include <MemoryFree.h>
+#include "dht.h"
+#include "LowPower.h"           // https://github.com/rocketscream/Low-Power
+// #include "FlashSpiFifo.h"
 
+#include <SPI.h>           //comes with Arduino IDE (www.arduino.cc)
+#include <RFM69.h>         //get it here: https://github.com/lowpowerlab/RFM69
+#include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
+#include <RFM69_OTA.h>     //get it here: https://github.com/lowpowerlab/RFM69
+
+#define ENABLE_VBAT_DIVISOR	 ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
+#define DISABLE_VBAT_DIVISOR ; // digitalWrite(EN_VBAT_DIV, LOW)
+
+#define MAGIC_VBAT_OFFSET_MV	-40
+
+#define WITH_RFM69
+#define WITH_SPIFLASH
+#define WITH_OLED
+
+#ifdef WITH_OLED
+#define I2C_ADDRESS 0x3C
+#include "SSD1306Ascii.h"
+#include "SSD1306AsciiAvrI2c.h"
+SSD1306AsciiAvrI2c oled;
+#define ENABLE_OLED_VCC		digitalWrite(OLED_VCC, HIGH)
+#define DISABLE_OLED_VCC	digitalWrite(OLED_VCC, LOW)
+#endif
+
+#if defined(WITH_RFM69)
+    RFM69 radio;
+    #define GATEWAYID   1
+    #define NETWORKID 100
+    #define NODEID 11
+    #define FREQUENCY RF69_868MHZ
+    #define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+#endif
+
+#if defined(WITH_SPIFLASH)
+    //*****************************************************************************************************************************
+    // flash(SPI_CS, MANUFACTURER_ID)
+    // SPI_CS          - CS pin attached to SPI flash chip (8 in case of Moteino)
+    // MANUFACTURER_ID - OPTIONAL, 0x1F44 for adesto(ex atmel) 4mbit flash
+    //                             0xEF30 for windbond 4mbit flash
+    //                             0xEF40 for windbond 16/64mbit flash
+    //*****************************************************************************************************************************
+    SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
+#endif
+
+typedef enum {
+    C10=0,
+    C15,
+    C17,
+    C20,
+    C22,
+    C_NUM
+} t_tempratures;
+
+const int fixed_temps[C_NUM] = {10, 15, 17, 20, 22};
+int cur_fixed_temp = C15;
+int desired_temp = fixed_temps[cur_fixed_temp];
+
+typedef struct {
+    int temp;
+    int humi;
+    int vbat_mv;
+    int cycle_ms;
+} t_sample_data;
+
+t_sample_data last_sample = {0,0,0};
+
+typedef enum {STATE_ON = 0, STATE_POWER_SAVE} t_system_state;
+volatile t_system_state system_state;
+
+typedef enum {CYCLIC = 0, INT_EXT} t_wake_up_cause;
+volatile t_wake_up_cause wake_up_cause = INT_EXT;
+
+// Custom defines
+#define SERIAL_BR 115200
+#define DHTTYPE   DHT22   // DHT 22  (AM2302), AM2321
 dht DHT;
-Sleep sleep;
-RTC_DS1307 rtc;
 
-void goToSleep(unsigned long ms);
+// FlashSpiFifo ffifo;
 
-class LCD_Manager {
-
-public:
-	LCD_Manager() {}
-
-	void renderMainScreen(unsigned int currentT, unsigned int objectiveT, bool isHeatOn)
-	{
-		char buff[17];
-		sprintf(buff, "Temp: %d.%d ", currentT/10, currentT%10);
-		strcat(buff, isHeatOn ? "ON" : "OFF");
-		Serial.println(buff);
-
-		sprintf(buff, "Obje: %d.%d ", objectiveT/10, objectiveT%10);
-		Serial.println(buff);
-	}
-};
-
-LCD_Manager lcd;
-
-void setup() {
-	Serial.begin(115200);
-	while(!Serial);
-
-	pinMode(PIN_BTN_MORE, 	INPUT);
-
-	pinMode(13,OUTPUT);
-	digitalWrite(13, LOW);
-
-	pinMode(4,OUTPUT);
-	digitalWrite(4, LOW);
-
-	delay(1000);
-
-	for(int i=0; i<20; i++) {
-
-		_isHumanInteraction = false;
-
-		digitalWrite(4, HIGH);
-		digitalWrite(13, HIGH);
-		delay(1000);
-		digitalWrite(4, LOW);
-		digitalWrite(13, LOW);
+/* Function prototypes */
+void periodicTask();
+void RSI_Red();
+void goToSleep();
+void wakeUp();
+/***********************/
 
 
-		goToSleep(120000);
+#define CYCLES_OF_SLEEP_S   (unsigned int) 20
+#define TIMER_HOLD          (unsigned int) -1
+#define TIMEOUT_TO_SLEEP_MS (unsigned int) 10000
+#define SLEEP_CYC_10S		(unsigned int) 10
+#define SLEEP_CYC_5S		(unsigned int) 5
+#define SLEEP_CYC_2S		(unsigned int) 2
+#define SLEEP_CYC_1S		(unsigned int) 1
 
+int read_time;
+int cycles = 0;
+long timer_to_sleep = TIMER_HOLD;
+uint8_t remaining_sleep_cycles = 0;
 
-		delay(500);
-		Serial.println("Back!");
-	}
+static int rele_value = LOW;
 
+// ========================== End of Header ====================================
 
-
-
-
-	pinMode(RELE_PIN, 	OUTPUT);
-	pinMode(INFO_LED, 	OUTPUT);
-	pinMode(DHT22_VCC, 	OUTPUT);
-	pinMode(RTC_VCC, 	OUTPUT);
-	pinMode(SD_VCC, 	OUTPUT);
-
-	pinMode(PIN_BTN_MORE, 	INPUT);
-	pinMode(PIN_BTN_LESS, 	INPUT);
-
-	_loadSettingsFromEeprom();
-
-	digitalWrite(INFO_LED, 	LOW);
-	digitalWrite(DHT22_VCC, HIGH);
-	digitalWrite(RTC_VCC, LOW);
-	digitalWrite(SD_VCC, LOW);
-
-	// pinMode(2,INPUT_PULLUP);
-	// attachInterrupt(digitalPinToInterrupt(2), _readTempHum, FALLING);
-
-	//////////////////////////////
-
-	_initRTC();
-	_initSD();
-	_readTempHum();
-
-	_timerPeriod100 = millis();
-	_timerPeriod1000 = millis();
-	_timerToSleep = millis();
-
-	lcd.renderMainScreen(_tempActual, _thermoSettings.temp_objective, isHeatOn);
+void RSI_Red()
+{
+    wake_up_cause = INT_EXT;
 }
 
-bool rele_state = false;
+void init_io_pins()
+{
+    SET_DIGITAL_PINS_AS_INPUTS();
+
+    // -- Custom IO setup --
+    pinMode(OLED_VCC, OUTPUT);
+    pinMode(BUTTON_IN, INPUT_PULLUP);
+    pinMode(INFO_LED, OUTPUT);
+    pinMode(RELAY_TRIGGER, INPUT_PULLUP);
+    pinMode(RELAY_TRIGGER, INPUT);
+}
+
+void setup()
+{
+    Serial.begin(SERIAL_BR);
+    while(!Serial);
+
+    init_io_pins();
+
+    LED_ON;
+
+    init_radio();
+    init_flash();
+    init_oled();
+
+    LED_OFF;
+
+    sampleData();
+    updateOled();
+}
+
+
+void button_pressed_callback()
+{
+    cur_fixed_temp = (++cur_fixed_temp%C_NUM);
+    desired_temp = fixed_temps[cur_fixed_temp];
+
+    DEBUG("cur_fixed_temp: "); DEBUGLN(cur_fixed_temp);
+    DEBUG("desired_temp: "); DEBUGLN(desired_temp);
+
+    updateOled();
+
+    timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+}
+
+static uint16_t get_vbat_mv()
+{
+    analogReference(INTERNAL);	// Referencia interna de 1.1V
+
+    uint16_t adc_vbat = analogRead(A7);
+
+    for(int i=0; i<10; i++) {
+        adc_vbat = analogRead(A7);
+        delay(1);
+    }
+
+    float vbat = map(adc_vbat, 0, 1023, 0, 1100);	// Passem de la lectura 0-1023 de ADC a mV de 0-1100mV
+    vbat *= 11;		// 11 és el factor de divisió del divisor.
+    vbat = vbat + MAGIC_VBAT_OFFSET_MV;
+
+    return (uint16_t)vbat;
+}
+
+void DoRelayPulse()
+{
+    pinMode(RELAY_TRIGGER, OUTPUT);
+    delay(50);
+
+    digitalWrite(RELAY_TRIGGER, LOW);
+    delay(250);
+    digitalWrite(RELAY_TRIGGER, HIGH);
+
+    pinMode(RELAY_TRIGGER, INPUT_PULLUP);
+}
+
+bool isHeaterOn = false;
+
+void HeaterOn()
+{
+    DEBUGLN("HeaterOn");
+    if(isHeaterOn == true)
+        return;
+
+    DoRelayPulse();
+    isHeaterOn = true;
+}
+
+void HeaterOff()
+{
+    DEBUGLN("HeaterOff");
+    if(isHeaterOn == false)
+        return;
+
+    DoRelayPulse();
+    isHeaterOn = false;
+}
+
 void loop()
 {
-	// float vBat = analogRead(A0);
-	// vBat = (vBat*5.0) / 1023.0;
-	// Serial.println(vBat);
+    // if (radio.receiveDone()) {
+    // 	CheckForWirelessHEX(radio, flash, false);
+    // }
 
-	_readButtons();
-	
-	if((millis() - _timerPeriod100) > 100) {
-		_timerPeriod100 = millis();
+    if(wake_up_cause == INT_EXT) {
+        read_and_debounce_pushbutton();
 
-	}
+        if(timer_to_sleep == TIMER_HOLD) {
+            timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+        }
 
-	if((millis() - _timerPeriod1000) > 1000) {
-		_timerPeriod1000 = millis();
-		_dataLogger();		
-	}
+        if(millis() > timer_to_sleep) {
 
-	if((millis() - _timerToSleep) > TIMEOUT_TO_HEAT) {
-		if(_wasButtonPressed) {
-			_wasButtonPressed = false;
-			if(isHeatRequired())
-				TurnHeatON()
-			else
-				TurnHeatOFF()
+            DEBUGLN(last_sample.temp);
+            DEBUGLN(desired_temp);
 
-			lcd.renderMainScreen(_tempActual, _thermoSettings.temp_objective, isHeatOn);
-		}
-	}
+            if(last_sample.temp < desired_temp*10) {
+                HeaterOn();
+            }
+            else if(last_sample.temp >= ((desired_temp+1)*10)){
+                HeaterOff();
+            }
 
-	if((millis() - _timerToSleep) > TIMEOUT_TO_SLEEP) {
-		_isHumanInteraction = false;
+            delay(1000);
 
-		while(!_isHumanInteraction) {
-			_inSleepRoutine();
-			goToSleep(SLEEP_TIME_MS);
-			// ZZzzZZzzZZ
-		}
-		_postSleepRoutine();
-		_timerToSleep = millis();
-	}
+            timer_to_sleep = TIMER_HOLD;
+            remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
+            goToSleep();
+        }
+    }
+    else {
+        if(remaining_sleep_cycles == 0) {
+            periodicSleepTask();
+            remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
+        }
+        else {
+            remaining_sleep_cycles--;
+            goToSleep();
+        }
+    }
 }
 
-static unsigned long debounce = 0;
-void _readButtons()
+void updateOled()
 {
-	if((millis() - debounce) < 250) return;
+    char buff[16];
 
-	if(digitalRead(PIN_BTN_MORE)) {
-		_timerToSleep = millis();
-		_lastButtonPressed = BTN_MORE;
-		_wasButtonPressed = true;
-		debounce = millis();
-	}
-		
-	else if(digitalRead(PIN_BTN_LESS)) {
-		_timerToSleep = millis();
-		_lastButtonPressed = BTN_LESS;
-		_wasButtonPressed = true;
-		debounce = millis();
-	}
-	else
-		_lastButtonPressed = BTN_NONE;
+    oled.clear();
+    oled.set2X();
 
+    String str_temp_set = String((float)fixed_temps[cur_fixed_temp],1);
+    String str_temp = String((last_sample.temp/10.0),1);
+    String str_humi = String((last_sample.humi/10.0),1);
+    String str_vbat = String((last_sample.vbat_mv/1000.0),2);
 
-	if(_lastButtonPressed != BTN_NONE)
-		_processButtonPress();
+    sprintf(buff, "Set:  %sC", str_temp_set.c_str());
+    oled.println(buff);
+
+    sprintf(buff, "Real: %sC", str_temp.c_str(), str_humi.c_str());
+    oled.println(buff);
+
+    oled.set1X();
+    sprintf(buff, "VBat: %s V", str_vbat.c_str());
+    oled.println(buff);
 }
 
-void _processButtonPress()
+#define TX_BUFF_LEN	((uint8_t) 10)
+void txToBase()
 {
-	if(_lastButtonPressed == BTN_MORE) {
-		_thermoSettings.temp_objective += 5;	// half a degree;
-	}
-	else if(_lastButtonPressed == BTN_LESS) {
-		_thermoSettings.temp_objective -= 5;	// half a degree;
-	}
+    uint8_t tx_buff[TX_BUFF_LEN];
 
-	_storedSettingsToEeprom();
+    tx_buff[0] = last_sample.temp & 0x00FF;
+    tx_buff[1] = (last_sample.temp >> 8);
 
-	lcd.renderMainScreen(_tempActual, _thermoSettings.temp_objective, isHeatOn);
+    tx_buff[2] = last_sample.humi & 0x00FF;
+    tx_buff[3] = (last_sample.humi >> 8);
+
+//    tx_buff[4] = noise_tx & 0x00FF;
+//    tx_buff[5] = (noise_tx >> 8);
+
+    tx_buff[6] = last_sample.vbat_mv & 0x00FF;
+    tx_buff[7] = (last_sample.vbat_mv >> 8);
+
+    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
+
+    tx_buff[9] = isHeaterOn;
+
+    // radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
+    radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
 }
 
-void _inSleepRoutine()
+void sampleData()
 {
-	// pinMode(RTC_VCC, OUTPUT);
-	digitalWrite(SD_VCC, LOW);
-	digitalWrite(RTC_VCC, LOW);
+    char buff[16];
+    int safeguard_loop = 40;
 
-	_readTempHum();
+    while((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
+        delay(25);
 
-	rtc.begin();
+    last_sample.temp = DHT.temperature * 10;
+    last_sample.humi = DHT.humidity * 10;
+    last_sample.vbat_mv = get_vbat_mv();
 
-	_printDateTime();
-
-	if(isHeatRequired())
-		TurnHeatON()
-	else
-		TurnHeatOFF()
-
-	Serial.print(F("\tHeat: "));
-	Serial.println(isHeatOn ? "ON" : "OFF");
-
-	// digitalWrite(RTC_VCC, HIGH);
-	// digitalWrite(SD_VCC, HIGH);
-	// pinMode(RTC_VCC, INPUT);
+    sprintf(buff, "%d:%d:%d", last_sample.temp, last_sample.humi, last_sample.vbat_mv);
+    DEBUGLN(buff);
 }
 
-void _postSleepRoutine()
+void periodicAwakeTask()
 {
-	lcd.renderMainScreen(_tempActual, _thermoSettings.temp_objective, isHeatOn);
-	debounce = millis();
+    uint32_t t = millis();
+
+    LED_ON;
+
+    sampleData();
+    updateOled();
+
+    last_sample.cycle_ms = millis()-t;
+
+    LED_OFF;
 }
 
-bool isHeatRequired()
+void periodicSleepTask()
 {
-	// static bool ret = true;
+    uint32_t t = millis();
 
-	if(_tempActual >= _thermoSettings.temp_objective)
-		isHeatOn = false;
-	else
-		isHeatOn = true;
+    LED_ON;
 
-	return isHeatOn;
+    sampleData();
+    txToBase();
+
+    last_sample.cycle_ms = millis()-t;
+
+    LED_OFF;
 }
 
-void _readTempHum()
+void goToSleep()
 {
-	unsigned long ms = millis();
-	digitalWrite(DHT22_VCC,LOW);
-	digitalWrite(INFO_LED, HIGH);
+    // flash.sleep();   /* Only if it was awake. */
+    radio.sleep();
+    wake_up_cause = CYCLIC;
 
-	isTempHumOK = true;
+    DISABLE_OLED_VCC;
+    pinMode(OLED_VCC, OUTPUT);
+    pinMode(BUTTON_IN, INPUT_PULLUP);
+    pinMode(INFO_LED, OUTPUT);
+    pinMode(RELAY_TRIGGER, INPUT_PULLUP);
 
-	while(DHT.read22(DHT22_PIN) != DHTLIB_OK) {
-		if((millis() - ms) > 3000) {
-			isTempHumOK = false;
-			break;
-		}
-		delay(150);
-	}
+    attachInterrupt(digitalPinToInterrupt(BUTTON_IN), RSI_Red, LOW);
+    // Enter power down state with ADC and BOD module disabled.
+    // Wake up when wake up pin is low.
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+//     delay(1000);
+    // ZZzzZZzzZZzz
 
-	if(isTempHumOK)
-	{
-		// char buffer[32];
+    // Disable external pin interrupt on wake up pin.
+    detachInterrupt(digitalPinToInterrupt(BUTTON_IN));
 
-		_tempActual = int(DHT.temperature*10);
-		// sprintf(buffer, "_readTempHum()\t %d ms\t%d\t%d", (int)(millis() - ms), _tempActual, int(DHT.humidity*10));
-		// Serial.println(buffer);
-		// delay(25);
-	}
-
-	digitalWrite(INFO_LED,LOW);
-	digitalWrite(DHT22_VCC, HIGH);
+    wakeUp();
 }
 
-void _dataLogger()
+/* Wake up routine */
+void wakeUp()
 {
-	if(!isSDInit) return;
-
-	int ms = millis();
-	digitalWrite(INFO_LED,HIGH);
-
-	char logline[64];
-	DateTime now = rtc.now();
-
-	sprintf(logline, "%02d%02d%02d;", now.hour(), now.minute(), now.second());
-
-	// TEMPERATURE AND HUMIDITY
-	{
-		char tempHum[11];
-		if(isTempHumOK)
-			sprintf(tempHum, "%d;%d;", int(DHT.temperature*10), int(DHT.humidity*10));
-		else
-			strcpy(tempHum, "0;0;");
-
-		strcat(logline, tempHum);
-	}
-	
-	char fileName[32];
-	sprintf(fileName, "%d%02d%02d.csv", now.year(), now.month(), now.day());
-	File logFile = SD.open(fileName, FILE_WRITE);
-	if(logFile) {
-		logFile.seek(logFile.size());
-		logFile.println(logline);
-		logFile.close();
-	}
-
-	{
-		char buffer[128];
-		sprintf(buffer, "_dataLogger()\t %d ms\t", (int)(millis() - ms));
-		strcat(buffer, logline);
-		Serial.println(buffer);
-		delay(25);
-	}
-
-	digitalWrite(INFO_LED,LOW);
+    /* Do some wake up routines. */
+    /* radio doesn't need to be wake up. */
+    if(wake_up_cause == INT_EXT) {
+        init_oled();
+        updateOled();
+    }
 }
 
-void pin2Interrupt(void)
+#define DEBOUNCE_TIME_MS    100
+#define PB_PRESSED          LOW
+#define PB_RELEASED         HIGH
+
+typedef enum {
+    PB_IDLE = 0,
+    PB_DEBOUCE,
+    PB_PUSH_CONFIRMED
+} t_push_button_state;
+
+/*
+ * This function needs to be called very often.
+ * It implements a FSM IDLE -> DEBOUNCE -> CONFIRM to read a switch value
+ */
+static void read_and_debounce_pushbutton()
 {
-	_isHumanInteraction = true;
-	detachInterrupt(digitalPinToInterrupt(PIN_BTN_MORE));
+    static t_push_button_state pb_state = PB_IDLE;
+    static unsigned long tick_time = 0;
+
+    switch (pb_state) {
+        case PB_IDLE:
+            if(digitalRead(BUTTON_IN) == PB_PRESSED) {
+                pb_state = PB_DEBOUCE;
+                tick_time = millis();
+            }
+            else {
+                /* Keep the current state */
+            }
+            break;
+
+        case PB_DEBOUCE:
+            if((millis() - tick_time) > DEBOUNCE_TIME_MS) {
+                pb_state = PB_PUSH_CONFIRMED;
+            }
+            else if(digitalRead(BUTTON_IN) == PB_RELEASED) {
+                pb_state = PB_IDLE;
+            }
+            else {
+                /* Keep the current state */
+            }
+            break;
+
+        case PB_PUSH_CONFIRMED:
+            if(digitalRead(BUTTON_IN) == PB_RELEASED) {
+                button_pressed_callback();
+                pb_state = PB_IDLE;
+            }
+            else {
+                /* Keep the current state */
+            }
+            break;
+    }
 }
 
-void goToSleep(unsigned long ms)
+void init_radio()
 {
-	/*
-	Shut down LCD, SD, or any other external device.
-	*/
-	digitalWrite(RTC_VCC, HIGH);
-	digitalWrite(SD_VCC, HIGH);
-
-	Serial.println(F("\tZZzzZZzzZZ"));
-	delay(50);
-
-	EIFR = 0x01;
-	attachInterrupt(digitalPinToInterrupt(PIN_BTN_MORE), pin2Interrupt, RISING);
-	
-	sleep.pwrDownMode();
-	// sleep.idleMode(); //set sleep mode
-	
-	// sleep.sleepInterrupt(0,CHANGE); //(interrupt Number, interrupt State)
-	sleep.sleepDelay(ms, _isHumanInteraction);
-	/* ZZzzZZzz */
+#ifdef WITH_RFM69
+    radio.initialize(FREQUENCY,NODEID,NETWORKID);
+    radio.setHighPower();
+    radio.encrypt(ENCRYPTKEY);
+    radio.sleep();
+#endif
 }
 
-void _initSD()
+void init_flash()
 {
-	isSDInit = false;
-
-	if(!SD.begin(SD_CS)) {
-		Serial.println("SD\tFail!");
-		digitalWrite(INFO_LED, HIGH);
-		delay(2000);
-		digitalWrite(INFO_LED, LOW);
-	}
-	else {
-		DateTime now = rtc.now();
-		char fileName[32];
-		sprintf(fileName, "%d%02d%02d.csv", now.year(), now.month(), now.day());
-		if(!SD.exists(fileName)) {
-			File logFile = SD.open(fileName, FILE_WRITE);
-			if(logFile) {
-				logFile.println("timestamp;temp;humidity;");
-				logFile.close();
-			}
-		}
-		isSDInit = true;
-		Serial.println("SD\tOK!");
-	}
+#ifdef WITH_SPIFLASH
+    if (flash.initialize()) {
+        flash.sleep();
+    }
+#endif
 }
 
-void _initRTC()
+void init_oled()
 {
-	isRTCInit = false;
+#ifdef WITH_OLED
+    ENABLE_OLED_VCC;
+    delay(500);
 
-	if(rtc.begin() && rtc.isrunning()) {
-		isRTCInit = true;
-		Serial.println("RTC\tOK!");
-		_printDateTime();
-	}
-	else {
-		Serial.println("RTC\tFail!");
-		digitalWrite(INFO_LED, HIGH);
-		delay(2000);
-		digitalWrite(INFO_LED, LOW);
-	}
-	// rtc.adjust(DateTime(1448115499));
-	// rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-}
+    oled.begin(&Adafruit128x64, I2C_ADDRESS);
+    oled.setFont(Stang5x7);
+    oled.clear();
 
-void _blinkInfoLed(unsigned int times)
-{
-	digitalWrite(INFO_LED, LOW);
+    oled.home();
+    oled.set2X();
 
-	for(unsigned int i=0; i<times; ++i) {
-		digitalWrite(INFO_LED, HIGH);
-		delay(150);
-		digitalWrite(INFO_LED, LOW);
-		delay(150);
-	}
-
-	digitalWrite(INFO_LED, LOW);
-}
-
-void _printDateTime()
-{
-	if(isRTCInit) {
-		DateTime now = rtc.now();
-
-		Serial.print(now.year(), DEC);
-		Serial.print('/');
-		Serial.print(now.month(), DEC);
-		Serial.print('/');
-		Serial.print(now.day(), DEC);
-		Serial.print(' ');
-		Serial.print(now.hour(), DEC);
-		Serial.print(':');
-		Serial.print(now.minute(), DEC);
-		Serial.print(':');
-		Serial.print(now.second(), DEC);
-		Serial.println();
-
-		Serial.println(now.unixtime());
-
-		delay(100);
-	}
-}
-
-void _loadSettingsFromEeprom()
-{
-	byte b0 = EEPROM.read(0);
-	byte b1 = EEPROM.read(1);
-
-	if((b0 == CTRL_B0) && (b1 == CTRL_B1))
-		EEPROM.get(2, _thermoSettings);
-	else {
-		_thermoSettings.temp_objective = DEFAULT_OBJECTIVE;
-
-		// More settings to come
-		// ...
-
-		EEPROM.write(0, CTRL_B0);
-		EEPROM.write(1, CTRL_B1);
-		EEPROM.put(2, _thermoSettings);
-
-		_loadSettingsFromEeprom();
-	}
-
-	_thermoSettings.toSerial();
-}
-
-void _storedSettingsToEeprom()
-{
-	EEPROM.write(0, CTRL_B0);
-	EEPROM.write(1, CTRL_B1);
-	EEPROM.put(2, _thermoSettings);
+    oled.println("Thermostat ");
+    oled.println("v1         ");
+#endif
 }

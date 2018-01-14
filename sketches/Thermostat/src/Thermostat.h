@@ -14,13 +14,13 @@
 
 #include "Arduino.h"
 
-#define TurnHeatON()	{isHeatOn=true; digitalWrite(RELE_PIN, isHeatOn);}
-#define TurnHeatOFF()	{isHeatOn=false; digitalWrite(RELE_PIN, isHeatOn);}
+#define SET_DIGITAL_PINS_AS_INPUTS()        \
+        uint8_t p;                          \
+        for(p=0; p<PIN_COUNT; p++) {        \
+            pinMode(p, INPUT);              \
+            digitalWrite(p, LOW);           \
+        } while(0)  // This while is to allow ';' at the end of the macro
 
-// Custom Arduino libaries
-#include "dht.h"			// https://github.com/RobTillaart/Arduino/tree/master/libraries/DHTlib
-#include "Sleep_n0m1.h"		// https://github.com/n0m1/Sleep_n0m1
-#include "RTClib.h"			// https://github.com/adafruit/RTClib
 
 // I/O Pins
 enum {
@@ -41,70 +41,17 @@ enum {
     PIN_COUNT
 };	/* Moteino */
 
+#define LED_ON      digitalWrite(INFO_LED, HIGH)
+#define LED_OFF     digitalWrite(INFO_LED, LOW)
 
+#define USE_DEBUG
 
-// Pinout
-// #define PIN0  0		// Rx
-// #define PIN1  1		// Tx
-#define PIN_BTN_MORE  2 		// INT0
-#define DHT22_PIN 3 	// INT1
-#define SD_CS	  4
-#define DHT22_VCC 5
-#define PIN_BTN_LESS  6 		// 
-#define RTC_VCC	  7
-#define RELE_PIN  8
-#define INFO_LED  9
-// #define PIN10 10
-
-#define SD_VCC	A0
-
-#define	CTRL_B0		0x70
-#define	CTRL_B1		0x07
-
-// Initial Thermostat settings
-#define	DEFAULT_OBJECTIVE	200
-
-
-// App defines
-#define BTN_NONE	0
-#define BTN_MORE	1
-#define BTN_LESS	2
-#define TIMEOUT_TO_HEAT		(unsigned int)5000 // milliseconds
-#define TIMEOUT_TO_SLEEP	(unsigned int)10000 // milliseconds
-
-#define SLEEP_TIME_MS		(unsigned long)10000
-
-struct ThermoSettings {
-	unsigned int temp_objective;
-
-	void toSerial()
-	{
-		char buff[32];
-
-		Serial.println(F("Thermostat Settings:"));
-		sprintf(buff, "\tObjective: %d\n", temp_objective);
-		Serial.println(buff);
-	}
-
-} _thermoSettings;
-
-unsigned int _lastButtonPressed = BTN_NONE;
-bool _wasButtonPressed = false;
-
-unsigned long _timerToSleep = 0;
-unsigned long _timerPeriod100  = 0;
-unsigned long _timerPeriod1000 = 0;
-
-static bool _isHumanInteraction = false;
-
-unsigned int _tempActual = 0;
-
-bool t=false;
-
-bool isSDInit = false;
-bool isRTCInit = false;
-
-bool isTempHumOK = false;
-bool isHeatOn;
+#if defined(USE_DEBUG)
+    #define DEBUG(str)   Serial.print(str)
+    #define DEBUGLN(str) Serial.println(str)
+#else
+    #define DEBUG(str)
+    #define DEBUGLN(str)
+#endif
 
 #endif //THERMOSTAT_H
