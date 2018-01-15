@@ -102,7 +102,7 @@ void wakeUp();
 /***********************/
 
 
-#define CYCLES_OF_SLEEP_S   (unsigned int) 20
+#define CYCLES_OF_SLEEP_S   (unsigned int) 60
 #define TIMER_HOLD          (unsigned int) -1
 #define TIMEOUT_TO_SLEEP_MS (unsigned int) 10000
 #define SLEEP_CYC_10S		(unsigned int) 10
