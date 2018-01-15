@@ -299,8 +299,8 @@ void txToBase()
     tx_buff[2] = last_sample.humi & 0x00FF;
     tx_buff[3] = (last_sample.humi >> 8);
 
-//    tx_buff[4] = noise_tx & 0x00FF;
-//    tx_buff[5] = (noise_tx >> 8);
+    tx_buff[4] = desired_temp & 0x00FF;
+    tx_buff[5] = (desired_temp >> 8);
 
     tx_buff[6] = last_sample.vbat_mv & 0x00FF;
     tx_buff[7] = (last_sample.vbat_mv >> 8);
