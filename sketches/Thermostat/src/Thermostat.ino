@@ -8,9 +8,6 @@
 // Custom Arduino libraries
 #include "Thermostat.h"
 // #include "RTClib.h"         // https://github.com/adafruit/RTClib
-// #include "IRremote.h"       // https://github.com/z3t0/Arduino-IRremote
-// #include <Arduino_FreeRTOS.h>
-// #include "semphr.h"  // add the FreeRTOS functions for Semaphores (or Flags).
 // #include <MemoryFree.h>
 #include "dht.h"
 #include "LowPower.h"           // https://github.com/rocketscream/Low-Power
@@ -18,13 +15,14 @@
 
 #include <SPI.h>           //comes with Arduino IDE (www.arduino.cc)
 #include <RFM69.h>         //get it here: https://github.com/lowpowerlab/RFM69
-#include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
+//#include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
 #include <RFM69_OTA.h>     //get it here: https://github.com/lowpowerlab/RFM69
 
 #define ENABLE_VBAT_DIVISOR	 ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
 #define DISABLE_VBAT_DIVISOR ; // digitalWrite(EN_VBAT_DIV, LOW)
 
-#define MAGIC_VBAT_OFFSET_MV	-40
+#define TX_BUFF_LEN	((uint8_t) 10)
+#define MAGIC_VBAT_OFFSET_MV ((int8_t) -40)
 
 #define WITH_RFM69
 #define WITH_SPIFLASH
@@ -59,50 +57,72 @@ SSD1306AsciiAvrI2c oled;
     SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
 #endif
 
-typedef enum {
-    C10=0,
-    C15,
-    C17,
-    C20,
-    C22,
-    C_NUM
-} t_tempratures;
-
-const int fixed_temps[C_NUM] = {10, 15, 17, 20, 22};
-int cur_fixed_temp = C15;
-int desired_temp = fixed_temps[cur_fixed_temp];
-
-typedef struct {
-    int temp;
-    int humi;
-    int vbat_mv;
-    int cycle_ms;
-} t_sample_data;
-
-t_sample_data last_sample = {0,0,0};
-
-typedef enum {STATE_ON = 0, STATE_POWER_SAVE} t_system_state;
-volatile t_system_state system_state;
-
-typedef enum {CYCLIC = 0, INT_EXT} t_wake_up_cause;
-volatile t_wake_up_cause wake_up_cause = INT_EXT;
-
 // Custom defines
 #define SERIAL_BR 115200
-#define DHTTYPE   DHT22   // DHT 22  (AM2302), AM2321
+#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
+#define TIME_INCREMENT_S 10
+#define TIME_MAX_S (4*3600)
+
+void thermo_power_on_pre();
+void thermo_power_on_during();
+void thermo_power_save_pre();
+void thermo_power_save_during();
+
 dht DHT;
 
-// FlashSpiFifo ffifo;
+typedef enum {
+    MODE_TIME=0,
+    MODE_TEMP
+} t_thermo_mode;
+
+typedef enum {
+    HEATER_OFF=0,
+    HEATER_ON
+} t_heater_status;
+
+typedef enum {
+    POWER_ON=0,
+    POWER_SAVE
+} t_thermo_power_mode;
+
+typedef struct {
+    t_heater_status heater_status;
+    t_thermo_mode mode;
+    t_thermo_power_mode power_mode;
+    uint16_t remaining_time_s;
+    uint16_t humidity;
+    uint16_t temperature;
+    uint16_t setpoint;
+    uint16_t vbat_mv;
+} t_thermo_data;
+
+t_thermo_data td = {0};
+
+typedef void (*t_callback)(void);
+
+typedef struct {
+    t_callback pre_callback;
+    t_callback during_callback;
+    t_callback post_callback;
+} t_state_functions;
+
+static t_state_functions state_power_on{thermo_power_on_pre, thermo_power_on_during};
+static t_state_functions state_power_save{thermo_power_save_pre, thermo_power_save_during};
+static t_state_functions *current_state = &state_power_on;
+
+
+typedef enum {CYCLIC = 0, INT_EXT} t_wake_up_cause;
+volatile t_wake_up_cause wake_up_cause = CYCLIC;
 
 /* Function prototypes */
 void periodicTask();
 void RSI_Red();
-void goToSleep();
+void go_to_sleep();
 void wakeUp();
 /***********************/
 
 
-#define CYCLES_OF_SLEEP_S   (unsigned int) 60
+#define CYCLES_OF_SLEEP_S   (unsigned int) 20
 #define TIMER_HOLD          (unsigned int) -1
 #define TIMEOUT_TO_SLEEP_MS (unsigned int) 10000
 #define SLEEP_CYC_10S		(unsigned int) 10
@@ -110,13 +130,8 @@ void wakeUp();
 #define SLEEP_CYC_2S		(unsigned int) 2
 #define SLEEP_CYC_1S		(unsigned int) 1
 
-int read_time;
-int cycles = 0;
 long timer_to_sleep = TIMER_HOLD;
 uint8_t remaining_sleep_cycles = 0;
-
-static int rele_value = LOW;
-
 // ========================== End of Header ====================================
 
 void RSI_Red()
@@ -133,7 +148,6 @@ void init_io_pins()
     pinMode(BUTTON_IN, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_TRIGGER, INPUT_PULLUP);
-    pinMode(RELAY_TRIGGER, INPUT);
 }
 
 void setup()
@@ -151,20 +165,37 @@ void setup()
 
     LED_OFF;
 
-    sampleData();
-    updateOled();
+    set_thermo_state(&state_power_on);
 }
 
+void loop()
+{
+    // if (radio.receiveDone()) {
+    // 	CheckForWirelessHEX(radio, flash, false);
+    // }
+
+    current_state->during_callback();
+}
 
 void button_pressed_callback()
 {
-    cur_fixed_temp = (++cur_fixed_temp%C_NUM);
-    desired_temp = fixed_temps[cur_fixed_temp];
+    /* Some code */
+    // current_view->red_button_pressed();
 
-    DEBUG("cur_fixed_temp: "); DEBUGLN(cur_fixed_temp);
-    DEBUG("desired_temp: "); DEBUGLN(desired_temp);
+    switch (td.mode) {
+    case MODE_TIME:
+        td.remaining_time_s += TIME_INCREMENT_S;
+        if(td.remaining_time_s > TIME_MAX_S) {
+            td.remaining_time_s = 0;
+        }
+        break;
+    case MODE_TEMP:
 
-    updateOled();
+        break;
+
+    default:
+        break;
+    }
 
     timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
 }
@@ -199,71 +230,104 @@ void DoRelayPulse()
     pinMode(RELAY_TRIGGER, INPUT_PULLUP);
 }
 
-bool isHeaterOn = false;
+bool is_heater_on = false;
 
-void HeaterOn()
+void heater_on()
 {
-    DEBUGLN("HeaterOn");
-    if(isHeaterOn == true)
+    if(td.heater_status == HEATER_ON)
         return;
 
     DoRelayPulse();
-    isHeaterOn = true;
+    td.heater_status = HEATER_ON;
+    LED_ON;
 }
 
-void HeaterOff()
+void heater_off()
 {
-    DEBUGLN("HeaterOff");
-    if(isHeaterOn == false)
+    if(td.heater_status == HEATER_OFF)
         return;
 
     DoRelayPulse();
-    isHeaterOn = false;
+    td.heater_status = HEATER_OFF;
+    LED_OFF;
 }
 
-void thermostatLogic()
+void thermo_logic()
 {
-    if(last_sample.temp < desired_temp*10) {
-        HeaterOn();
-    }
-    else if(last_sample.temp >= ((desired_temp+1)*10)){
-        HeaterOff();
+    switch (td.mode) {
+    case MODE_TIME:
+        if(td.remaining_time_s > 0)
+            heater_on();
+        else
+            heater_off();
+        break;
+    case MODE_TEMP:
+
+        break;
+
+    default:
+        break;
     }
 }
 
-void loop()
+void thermo_power_on_pre()
 {
-    // if (radio.receiveDone()) {
-    // 	CheckForWirelessHEX(radio, flash, false);
-    // }
+    timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
 
-    if(wake_up_cause == INT_EXT) {
-        read_and_debounce_pushbutton();
+    sampleData();
+    updateOled();
+}
 
-        if(timer_to_sleep == TIMER_HOLD) {
-            timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
-        }
+void thermo_power_on_during()
+{
+    static long long timer_1s = millis() + 1000;
 
-        if(millis() > timer_to_sleep) {
-            thermostatLogic();
+    if(millis() > timer_1s) {
+        timer_1s = millis() + 1000;
 
-            delay(1000);
+        if(td.remaining_time_s > 0)
+            td.remaining_time_s--;
 
-            timer_to_sleep = TIMER_HOLD;
-            remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
-            goToSleep();
-        }
+        updateOled();
+    }
+
+    read_and_debounce_pushbutton();
+
+    if(timer_to_sleep == TIMER_HOLD) {
+        timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+    }
+
+    if(millis() > timer_to_sleep) {
+        thermo_logic();
+        set_thermo_state(&state_power_save);
+    }
+}
+
+void thermo_power_save_pre()
+{
+    timer_to_sleep = TIMER_HOLD;
+    remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
+}
+
+void thermo_power_save_during()
+{
+    if(remaining_sleep_cycles == 0) {
+        periodicSleepTask();
+        remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
     }
     else {
-        if(remaining_sleep_cycles == 0) {
-            periodicSleepTask();
-            remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
-        }
-        else {
-            remaining_sleep_cycles--;
-            goToSleep();
-        }
+        if(td.remaining_time_s > 0)
+            td.remaining_time_s--;
+
+        remaining_sleep_cycles--;
+        go_to_sleep();
     }
+}
+
+void set_thermo_state(t_state_functions *new_state)
+{
+    current_state = new_state;
+    current_state->pre_callback();
 }
 
 void updateOled()
@@ -273,42 +337,43 @@ void updateOled()
     oled.clear();
     oled.set2X();
 
-    String str_temp_set = String((float)fixed_temps[cur_fixed_temp],1);
-    String str_temp = String((last_sample.temp/10.0),1);
-    String str_humi = String((last_sample.humi/10.0),1);
-    String str_vbat = String((last_sample.vbat_mv/1000.0),2);
+    oled.println(td.remaining_time_s);
 
-    sprintf(buff, "Set:  %sC", str_temp_set.c_str());
-    oled.println(buff);
+//    String str_setpoint = String((td.setpoint/10.0),1);
+//    String str_temp = String((td.temperature/10.0),1);
+//    String str_humi = String((td.humidity/10.0),1);
+//    String str_vbat = String((td.vbat_mv/1000.0),2);
 
-    sprintf(buff, "Real: %sC", str_temp.c_str(), str_humi.c_str());
-    oled.println(buff);
+//    sprintf(buff, "Set:  %sC", str_setpoint.c_str());
+//    oled.println(buff);
 
-    oled.set1X();
-    sprintf(buff, "VBat: %s V", str_vbat.c_str());
-    oled.println(buff);
+//    sprintf(buff, "Real: %sC", str_temp.c_str(), str_humi.c_str());
+//    oled.println(buff);
+
+//    oled.set1X();
+//    sprintf(buff, "VBat: %s V", str_vbat.c_str());
+//    oled.println(buff);
 }
 
-#define TX_BUFF_LEN	((uint8_t) 10)
 void txToBase()
 {
     uint8_t tx_buff[TX_BUFF_LEN];
 
-    tx_buff[0] = last_sample.temp & 0x00FF;
-    tx_buff[1] = (last_sample.temp >> 8);
+    tx_buff[0] = td.temperature & 0x00FF;
+    tx_buff[1] = (td.temperature >> 8);
 
-    tx_buff[2] = last_sample.humi & 0x00FF;
-    tx_buff[3] = (last_sample.humi >> 8);
+    tx_buff[2] = td.humidity & 0x00FF;
+    tx_buff[3] = (td.humidity >> 8);
 
-    tx_buff[4] = desired_temp & 0x00FF;
-    tx_buff[5] = (desired_temp >> 8);
+    tx_buff[4] = td.setpoint & 0x00FF;
+    tx_buff[5] = (td.setpoint >> 8);
 
-    tx_buff[6] = last_sample.vbat_mv & 0x00FF;
-    tx_buff[7] = (last_sample.vbat_mv >> 8);
+    tx_buff[6] = td.vbat_mv & 0x00FF;
+    tx_buff[7] = (td.vbat_mv >> 8);
 
-    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
+//    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
 
-    tx_buff[9] = isHeaterOn;
+    tx_buff[9] = td.heater_status;
 
     // radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
     radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
@@ -322,44 +387,30 @@ void sampleData()
     while((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
         delay(25);
 
-    last_sample.temp = DHT.temperature * 10;
-    last_sample.humi = DHT.humidity * 10;
-    last_sample.vbat_mv = get_vbat_mv();
+    td.temperature = DHT.temperature * 10;
+    td.humidity = DHT.humidity * 10;
+    td.vbat_mv = get_vbat_mv();
 
-    sprintf(buff, "%d:%d:%d", last_sample.temp, last_sample.humi, last_sample.vbat_mv);
+    sprintf(buff, "%d:%d:%d:%d", td.heater_status, td.temperature, td.humidity, td.vbat_mv);
     DEBUGLN(buff);
-}
-
-void periodicAwakeTask()
-{
-    uint32_t t = millis();
-
-    LED_ON;
-
-    sampleData();
-    updateOled();
-
-    last_sample.cycle_ms = millis()-t;
-
-    LED_OFF;
 }
 
 void periodicSleepTask()
 {
     uint32_t t = millis();
 
-    LED_ON;
+//    LED_ON;
 
     sampleData();
     txToBase();
-    thermostatLogic();
+    thermo_logic();
 
-    last_sample.cycle_ms = millis()-t;
+//    last_sample.cycle_ms = millis()-t;
 
-    LED_OFF;
+//    LED_OFF;
 }
 
-void goToSleep()
+void go_to_sleep()
 {
     // flash.sleep();   /* Only if it was awake. */
     radio.sleep();
@@ -391,7 +442,7 @@ void wakeUp()
     /* radio doesn't need to be wake up. */
     if(wake_up_cause == INT_EXT) {
         init_oled();
-        updateOled();
+        set_thermo_state(&state_power_on);
     }
 }
 

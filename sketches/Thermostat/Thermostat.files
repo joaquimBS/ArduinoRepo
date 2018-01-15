@@ -1,5 +1,5 @@
-README.md
-src/Thermostat.ino
+lib/readme.txt
 src/Thermostat.h
+src/Thermostat.ino
 platformio.ini
 README.md

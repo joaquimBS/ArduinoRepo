@@ -29,7 +29,7 @@ enum {
     D2_RESERVED_RADIO,
     BUTTON_IN,
     RELAY_TRIGGER,
-    EN_VBAT_DIV,
+    D5,
     DHT_PIN,
     OLED_VCC,
     FLASH_SS,
