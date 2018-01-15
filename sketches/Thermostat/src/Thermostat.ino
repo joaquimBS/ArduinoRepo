@@ -221,6 +221,16 @@ void HeaterOff()
     isHeaterOn = false;
 }
 
+void thermostatLogic()
+{
+    if(last_sample.temp < desired_temp*10) {
+        HeaterOn();
+    }
+    else if(last_sample.temp >= ((desired_temp+1)*10)){
+        HeaterOff();
+    }
+}
+
 void loop()
 {
     // if (radio.receiveDone()) {
@@ -235,16 +245,7 @@ void loop()
         }
 
         if(millis() > timer_to_sleep) {
-
-            DEBUGLN(last_sample.temp);
-            DEBUGLN(desired_temp);
-
-            if(last_sample.temp < desired_temp*10) {
-                HeaterOn();
-            }
-            else if(last_sample.temp >= ((desired_temp+1)*10)){
-                HeaterOff();
-            }
+            thermostatLogic();
 
             delay(1000);
 
@@ -351,6 +352,7 @@ void periodicSleepTask()
 
     sampleData();
     txToBase();
+    thermostatLogic();
 
     last_sample.cycle_ms = millis()-t;
 
