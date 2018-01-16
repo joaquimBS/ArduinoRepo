@@ -69,6 +69,7 @@ dht DHT;
 #define SERIAL_BR 115200
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
+#define TIME_TIME_TO_ON_MAX_TIME_S 3600
 #define TIME_OFF 0
 
 #ifdef USE_DEBUG
@@ -242,10 +243,10 @@ void click_time_to_off(t_push_button_state click_type)
             td.remaining_time_s = TIME_OFF;
         }
     }
-    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         set_thermo_state(&state_time_to_on);
     }
-    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
     }
     else {
@@ -287,10 +288,10 @@ void click_temp_setpoint(t_push_button_state click_type)
             /* Nothing */
         }
     }
-    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         set_thermo_state(&state_time_to_off);
     }
-    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
     }
     else {
@@ -334,6 +335,11 @@ void thermo_logic_time_to_on()
 {
     if (td.remaining_time_s == 0) {
         heater_on();
+        
+        /* The following code is used to turn OFF the heater 
+         * at some point. If not used, heater would be ON forever! */
+        td.remaining_time_s = TIME_TIME_TO_ON_MAX_TIME_S;
+        set_thermo_state(&state_time_to_off);
     }
     else {
         heater_off();
