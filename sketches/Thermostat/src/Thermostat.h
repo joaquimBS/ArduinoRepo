@@ -1,13 +1,13 @@
 /************************************************************************************
-* 	
-* 	Name     : Thermostat.h
-* 	Author   : Joaquim Barrera
-* 	Date     : 2016
-* 	Version  : 0.1
-*	Platform : Arduino Nano 328 5V (CH340 driver)
-* 	Notes    : 
-* 
-***********************************************************************************/
+ * 	
+ * 	Name     : Thermostat.h
+ * 	Author   : Joaquim Barrera
+ * 	Date     : 2016
+ * 	Version  : 0.1
+ *	Platform : Arduino Nano 328 5V (CH340 driver)
+ * 	Notes    : 
+ * 
+ ***********************************************************************************/
 
 #ifndef THERMOSTAT_H
 #define THERMOSTAT_H
@@ -23,6 +23,7 @@
 
 
 // I/O Pins
+
 enum {
     D0,
     D1,
@@ -39,7 +40,7 @@ enum {
     D12_RESERVED_RADIO,
     D13_RESERVED_RADIO,
     PIN_COUNT
-};	/* Moteino */
+}; /* Moteino */
 
 #define LED_ON      digitalWrite(INFO_LED, HIGH)
 #define LED_OFF     digitalWrite(INFO_LED, LOW)
@@ -47,11 +48,11 @@ enum {
 #define USE_DEBUG
 
 #if defined(USE_DEBUG)
-    #define DEBUG(str)   Serial.print(str)
-    #define DEBUGLN(str) Serial.println(str)
+#define DEBUG(str)   Serial.print(str)
+#define DEBUGLN(str) Serial.println(str)
 #else
-    #define DEBUG(str)
-    #define DEBUGLN(str)
+#define DEBUG(str)
+#define DEBUGLN(str)
 #endif
 
 #endif //THERMOSTAT_H

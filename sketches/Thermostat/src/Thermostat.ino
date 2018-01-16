@@ -18,10 +18,10 @@
 //#include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
 #include <RFM69_OTA.h>     //get it here: https://github.com/lowpowerlab/RFM69
 
-#define ENABLE_VBAT_DIVISOR	 ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
+#define ENABLE_VBAT_DIVISOR  ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
 #define DISABLE_VBAT_DIVISOR ; // digitalWrite(EN_VBAT_DIV, LOW)
 
-#define TX_BUFF_LEN	((uint8_t) 10)
+#define TX_BUFF_LEN ((uint8_t) 10)
 #define MAGIC_VBAT_OFFSET_MV ((int8_t) -40)
 
 #define WITH_RFM69
@@ -33,28 +33,28 @@
 #include "SSD1306Ascii.h"
 #include "SSD1306AsciiAvrI2c.h"
 SSD1306AsciiAvrI2c oled;
-#define ENABLE_OLED_VCC		digitalWrite(OLED_VCC, HIGH)
-#define DISABLE_OLED_VCC	digitalWrite(OLED_VCC, LOW)
+#define ENABLE_OLED_VCC  digitalWrite(OLED_VCC, HIGH)
+#define DISABLE_OLED_VCC digitalWrite(OLED_VCC, LOW)
 #endif
 
 #if defined(WITH_RFM69)
-    RFM69 radio;
-    #define GATEWAYID   1
-    #define NETWORKID 100
-    #define NODEID 11
-    #define FREQUENCY RF69_868MHZ
-    #define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+RFM69 radio;
+#define GATEWAYID   1
+#define NETWORKID 100
+#define NODEID 11
+#define FREQUENCY RF69_868MHZ
+#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
 #endif
 
 #if defined(WITH_SPIFLASH)
-    //*****************************************************************************************************************************
-    // flash(SPI_CS, MANUFACTURER_ID)
-    // SPI_CS          - CS pin attached to SPI flash chip (8 in case of Moteino)
-    // MANUFACTURER_ID - OPTIONAL, 0x1F44 for adesto(ex atmel) 4mbit flash
-    //                             0xEF30 for windbond 4mbit flash
-    //                             0xEF40 for windbond 16/64mbit flash
-    //*****************************************************************************************************************************
-    SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
+//*****************************************************************************************************************************
+// flash(SPI_CS, MANUFACTURER_ID)
+// SPI_CS          - CS pin attached to SPI flash chip (8 in case of Moteino)
+// MANUFACTURER_ID - OPTIONAL, 0x1F44 for adesto(ex atmel) 4mbit flash
+//                             0xEF30 for windbond 4mbit flash
+//                             0xEF40 for windbond 16/64mbit flash
+//*****************************************************************************************************************************
+SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
 #endif
 
 dht DHT;
@@ -70,12 +70,13 @@ dht DHT;
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
 #define TIME_OFF 0
+
 #ifdef USE_DEBUG
-    #define TIME_INCREMENT_S 10
-    #define TIME_MAX_S 60
+#define TIME_INCREMENT_S 10
+#define TIME_MAX_S 60
 #else
-    #define TIME_INCREMENT_S 1800
-    #define TIME_MAX_S (4*3600)
+#define TIME_INCREMENT_S 1800
+#define TIME_MAX_S (4*3600)
 #endif
 
 #define TEMP_SETPOINT_INC   5
@@ -83,7 +84,8 @@ dht DHT;
 #define TEMP_SETPOINT_MIN   130
 #define TEMP_SETPOINT_OFF   0
 
-typedef enum {
+typedef enum
+{
     PB_IDLE = 0,
     PB_DEBOUCE,
     PB_SHORT_CLICK_CONFIRMED,
@@ -109,24 +111,29 @@ void click_time_to_on(t_push_button_state);
 void thermo_logic_temp_setpoint();
 void oled_update_temp_setpoint();
 void click_temp_setpoint(t_push_button_state);
+
 /***********************/
 
-typedef enum {
-    MODE_TIME=0,
+typedef enum
+{
+    MODE_TIME = 0,
     MODE_TEMP
 } t_thermo_mode;
 
-typedef enum {
-    HEATER_OFF=0,
+typedef enum
+{
+    HEATER_OFF = 0,
     HEATER_ON
 } t_heater_status;
 
-typedef enum {
-    POWER_ON=0,
+typedef enum
+{
+    POWER_ON = 0,
     POWER_SAVE
 } t_thermo_power_mode;
 
-typedef struct {
+typedef struct
+{
     t_heater_status heater_status;
     t_thermo_mode mode;
     t_thermo_power_mode power_mode;
@@ -139,31 +146,34 @@ typedef struct {
 
 t_thermo_data td = {0};
 
-typedef struct {
+typedef struct
+{
     t_callback thermo_logic;
     t_callback oled_update;
     t_click_callback click_callback;
 } t_state_functions;
 
-static t_state_functions state_time_to_off {
+static t_state_functions state_time_to_off{
     thermo_logic_time_to_off,
     oled_update_time_to_off,
-    click_time_to_off
-};
-static t_state_functions state_time_to_on {
+    click_time_to_off};
+
+static t_state_functions state_time_to_on{
     thermo_logic_time_to_on,
     oled_update_time_to_on,
-    click_time_to_on
-};
-static t_state_functions state_temp_setpoint {
+    click_time_to_on};
+
+static t_state_functions state_temp_setpoint{
     thermo_logic_temp_setpoint,
     oled_update_temp_setpoint,
-    click_temp_setpoint
-};
+    click_temp_setpoint};
 
-static t_state_functions *state_current = &state_time_to_off; 
+static t_state_functions *state_current = &state_time_to_off;
 
-typedef enum {CYCLIC = 0, INT_EXT} t_wake_up_cause;
+typedef enum
+{
+    CYCLIC = 0, INT_EXT
+} t_wake_up_cause;
 volatile t_wake_up_cause wake_up_cause = CYCLIC;
 
 #define CYCLES_OF_SLEEP_S   (unsigned int) 20
@@ -193,7 +203,7 @@ void init_io_pins()
 void setup()
 {
     Serial.begin(SERIAL_BR);
-    while(!Serial);
+    while (!Serial);
 
     init_io_pins();
 
@@ -212,11 +222,11 @@ void setup()
 
 void loop()
 {
-//    if (radio.receiveDone()) {
-//       CheckForWirelessHEX(radio, flash, false);
-//    }
+    //    if (radio.receiveDone()) {
+    //       CheckForWirelessHEX(radio, flash, false);
+    //    }
 
-    if(td.power_mode == POWER_SAVE) {
+    if (td.power_mode == POWER_SAVE) {
         during_power_save();
     }
     else {
@@ -226,61 +236,61 @@ void loop()
 
 void click_time_to_off(t_push_button_state click_type)
 {
-    if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.remaining_time_s += TIME_INCREMENT_S;
-        if(td.remaining_time_s > TIME_MAX_S) {
+        if (td.remaining_time_s > TIME_MAX_S) {
             td.remaining_time_s = TIME_OFF;
         }
     }
-    else if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         set_thermo_state(&state_time_to_on);
     }
-    else if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         /* TBD */
     }
     else {
         /* Nothing */
-    }   
+    }
 }
 
 void click_time_to_on(t_push_button_state click_type)
 {
-    if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.remaining_time_s += TIME_INCREMENT_S;
-        if(td.remaining_time_s > TIME_MAX_S) {
+        if (td.remaining_time_s > TIME_MAX_S) {
             td.remaining_time_s = TIME_OFF;
         }
     }
-    else if(click_type == PB_LONG_CLICK_CONFIRMED) {
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         set_thermo_state(&state_temp_setpoint);
     }
-    else if(click_type == PB_VERYLONG_CLICK_CONFIRMED) {
+    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
     }
     else {
         /* Nothing */
-    }   
+    }
 }
 
 void click_temp_setpoint(t_push_button_state click_type)
 {
-    if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.setpoint += TEMP_SETPOINT_INC;
-    
-        if(td.setpoint == TEMP_SETPOINT_OFF) {
+
+        if (td.setpoint == TEMP_SETPOINT_OFF) {
             td.setpoint = TEMP_SETPOINT_MIN;
         }
-        else if(td.remaining_time_s > TEMP_SETPOINT_MAX) {
+        else if (td.remaining_time_s > TEMP_SETPOINT_MAX) {
             td.remaining_time_s = TEMP_SETPOINT_OFF;
         }
         else {
             /* Nothing */
         }
     }
-    else if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         set_thermo_state(&state_time_to_off);
     }
-    else if(click_type == PB_SHORT_CLICK_CONFIRMED) {
+    else if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         /* TBD */
     }
     else {
@@ -290,7 +300,7 @@ void click_temp_setpoint(t_push_button_state click_type)
 
 void heater_on()
 {
-    if(td.heater_status == HEATER_ON)
+    if (td.heater_status == HEATER_ON)
         return;
 
     do_relay_pulse();
@@ -300,7 +310,7 @@ void heater_on()
 
 void heater_off()
 {
-    if(td.heater_status == HEATER_OFF)
+    if (td.heater_status == HEATER_OFF)
         return;
 
     do_relay_pulse();
@@ -309,9 +319,10 @@ void heater_off()
 }
 
 //-------------- Thermostat Logic Section --------------
+
 void thermo_logic_time_to_off()
 {
-    if(td.remaining_time_s == 0) {
+    if (td.remaining_time_s == 0) {
         heater_off();
     }
     else {
@@ -321,7 +332,7 @@ void thermo_logic_time_to_off()
 
 void thermo_logic_time_to_on()
 {
-    if(td.remaining_time_s == 0) {
+    if (td.remaining_time_s == 0) {
         heater_on();
     }
     else {
@@ -332,18 +343,18 @@ void thermo_logic_time_to_on()
 void thermo_logic_temp_setpoint()
 {
     uint16_t real_setpoint = td.setpoint;
-    
-    if(td.heater_status == HEATER_ON) {
+
+    if (td.heater_status == HEATER_ON) {
         real_setpoint += 1;
     }
     else {
         /* Nothing */
     }
 
-    if(td.temperature >= real_setpoint) {
+    if (td.temperature >= real_setpoint) {
         heater_off();
     }
-    else if(td.temperature < td.setpoint) {
+    else if (td.temperature < td.setpoint) {
         heater_on();
     }
     else {
@@ -351,22 +362,23 @@ void thermo_logic_temp_setpoint()
     }
 }
 //------------------------------------------------------
+
 void during_power_save()
 {
-    if(remaining_sleep_cycles == 0) {
+    if (remaining_sleep_cycles == 0) {
         remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
-        
+
         sample_data();
         tx_to_base();
         state_current->thermo_logic();
     }
     else {
-        if(td.remaining_time_s != 0)
+        if (td.remaining_time_s != 0)
             td.remaining_time_s--;
 
-        if(remaining_sleep_cycles != 0)
+        if (remaining_sleep_cycles != 0)
             remaining_sleep_cycles--;
-        
+
         go_to_sleep();
     }
 }
@@ -375,16 +387,16 @@ void during_power_on()
 {
     static long long timer_1s = millis() + 1000;
 
-    if(millis() > timer_1s) {
+    if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
-        
-        if(td.remaining_time_s != TIME_OFF)
+
+        if (td.remaining_time_s != TIME_OFF)
             td.remaining_time_s--;
     }
 
     read_and_debounce_pushbutton();
 
-    if(millis() > timer_to_sleep) {
+    if (millis() > timer_to_sleep) {
         /* encapsular a una funcio */
         state_current->thermo_logic();
         remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
@@ -408,7 +420,7 @@ void oled_update_time_to_off()
 void oled_update_time_to_on()
 {
     oled.set2X();
-    
+
     oled.println("Time To ON");
     oled.println(td.remaining_time_s);
 }
@@ -427,7 +439,7 @@ void sample_data()
     char buff[16];
     int safeguard_loop = 20;
 
-    while((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
+    while ((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
         delay(50);
 
     td.temperature = DHT.temperature * 10;
@@ -454,7 +466,7 @@ void tx_to_base()
     tx_buff[6] = td.vbat_mv & 0x00FF;
     tx_buff[7] = (td.vbat_mv >> 8);
 
-//    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
+    //    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
 
     tx_buff[9] = td.heater_status;
 
@@ -478,19 +490,19 @@ void go_to_sleep()
     // Enter power down state with ADC and BOD module disabled.
     // Wake up when wake up pin is low.
     LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-//    delay(1000);
+    //    delay(1000);
     /* ZZzzZZzzZZzz */
 
     // Disable external pin interrupt on wake up pin.
     detachInterrupt(digitalPinToInterrupt(BUTTON_IN));
 
-    if(wake_up_cause == INT_EXT) {
-        
+    if (wake_up_cause == INT_EXT) {
+
         // Ojo s'ha de testejar. Struct compare!!
-//        if(state_current == state_time_to_off) {
-//            heater_on();
-//        }
-        
+        //        if(state_current == state_time_to_off) {
+        //            heater_on();
+        //        }
+
         timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
         td.power_mode = POWER_ON;
         init_oled();
@@ -499,20 +511,20 @@ void go_to_sleep()
 
 static uint16_t get_vbat_mv()
 {
-    analogReference(INTERNAL);	// Referencia interna de 1.1V
+    analogReference(INTERNAL); // Referencia interna de 1.1V
 
     uint16_t adc_vbat = analogRead(A7);
 
-    for(int i=0; i<10; i++) {
+    for (int i = 0; i < 10; i++) {
         adc_vbat = analogRead(A7);
         delay(1);
     }
 
-    float vbat = map(adc_vbat, 0, 1023, 0, 1100);	// Passem de la lectura 0-1023 de ADC a mV de 0-1100mV
-    vbat *= 11;		// 11 és el factor de divisió del divisor.
+    float vbat = map(adc_vbat, 0, 1023, 0, 1100); // Passem de la lectura 0-1023 de ADC a mV de 0-1100mV
+    vbat *= 11; // 11 és el factor de divisió del divisor.
     vbat = vbat + MAGIC_VBAT_OFFSET_MV;
 
-    return (uint16_t)vbat;
+    return (uint16_t) vbat;
 }
 
 static void do_relay_pulse()
@@ -537,56 +549,56 @@ static void read_and_debounce_pushbutton()
     static unsigned long tick_time = 0;
 
     switch (pb_state) {
-        case PB_IDLE:
-            if(digitalRead(BUTTON_IN) == PB_PRESSED) {
-                pb_state = PB_DEBOUCE;
-                tick_time = millis();
-            }
-            else {
-                /* Keep the current state */
-            }
-            break;
+    case PB_IDLE:
+        if (digitalRead(BUTTON_IN) == PB_PRESSED) {
+            pb_state = PB_DEBOUCE;
+            tick_time = millis();
+        }
+        else {
+            /* Keep the current state */
+        }
+        break;
 
-        case PB_DEBOUCE:
-            if((millis() - tick_time) > VERYLONG_CLICK_TIME_MS) {
-                pb_state = PB_VERYLONG_CLICK_CONFIRMED;
-            }
-            else if((millis() - tick_time) > LONG_CLICK_TIME_MS) {
-                pb_state = PB_LONG_CLICK_CONFIRMED;
-            }
-            else if((millis() - tick_time) > SHORT_CLICK_TIME_MS) {
-                pb_state = PB_SHORT_CLICK_CONFIRMED;
-            }
-            else if(digitalRead(BUTTON_IN) == PB_RELEASED) {
-                pb_state = PB_IDLE;
-            }
-            else {
-                /* Keep the current state */
-            }
-            break;
+    case PB_DEBOUCE:
+        if ((millis() - tick_time) > VERYLONG_CLICK_TIME_MS) {
+            pb_state = PB_VERYLONG_CLICK_CONFIRMED;
+        }
+        else if ((millis() - tick_time) > LONG_CLICK_TIME_MS) {
+            pb_state = PB_LONG_CLICK_CONFIRMED;
+        }
+        else if ((millis() - tick_time) > SHORT_CLICK_TIME_MS) {
+            pb_state = PB_SHORT_CLICK_CONFIRMED;
+        }
+        else if (digitalRead(BUTTON_IN) == PB_RELEASED) {
+            pb_state = PB_IDLE;
+        }
+        else {
+            /* Keep the current state */
+        }
+        break;
 
-        case PB_SHORT_CLICK_CONFIRMED:
-        case PB_LONG_CLICK_CONFIRMED:
-        case PB_VERYLONG_CLICK_CONFIRMED:
-            /* Reset sleep timer because button is pressed */
-            timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+    case PB_SHORT_CLICK_CONFIRMED:
+    case PB_LONG_CLICK_CONFIRMED:
+    case PB_VERYLONG_CLICK_CONFIRMED:
+        /* Reset sleep timer because button is pressed */
+        timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
 
-            if(digitalRead(BUTTON_IN) == PB_RELEASED) {
-                state_current->click_callback(pb_state);
-                state_current->oled_update();
-                pb_state = PB_IDLE;
-            }
-            else {
-                /* Keep the current state */
-            }
-            break;
+        if (digitalRead(BUTTON_IN) == PB_RELEASED) {
+            state_current->click_callback(pb_state);
+            state_current->oled_update();
+            pb_state = PB_IDLE;
+        }
+        else {
+            /* Keep the current state */
+        }
+        break;
     }
 }
 
 void init_radio()
 {
 #ifdef WITH_RFM69
-    radio.initialize(FREQUENCY,NODEID,NETWORKID);
+    radio.initialize(FREQUENCY, NODEID, NETWORKID);
     radio.setHighPower();
     radio.encrypt(ENCRYPTKEY);
     radio.sleep();
