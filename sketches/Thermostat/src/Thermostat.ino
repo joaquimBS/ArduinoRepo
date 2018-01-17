@@ -69,21 +69,33 @@ dht DHT;
 #define SERIAL_BR 115200
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
-#define TIME_TIME_TO_ON_MAX_TIME_S 3600
-#define TIME_OFF 0
+#define TIME_ZERO ((uint16_t)0)
+#define TIMER_DISABLED ((uint16_t)-1)
 
 #ifdef USE_DEBUG
-#define TIME_INCREMENT_S 10
-#define TIME_MAX_S 60
+#define TIMEOUT_TO_SLEEP_MS ((unsigned int)3000)
+#define TIME_INCREMENT_S ((unsigned int)10)
+#define TIME_TO_OFF_MAX_S ((unsigned int)90)
+#define TIME_TO_ON_MAX_S ((unsigned int)90)
+#define TIME_TO_ON_MAX_TIME_AFTER_S ((unsigned int)5)
+#define CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
-#define TIME_INCREMENT_S 1800
-#define TIME_MAX_S (4*3600)
+#define TIMEOUT_TO_SLEEP_MS ((unsigned int)10000)
+#define TIME_INCREMENT_S ((unsigned int)1800)
+#define TIME_TO_OFF_MAX_S ((unsigned int)4*3600)
+#define TIME_TO_ON_MAX_S ((unsigned int)12*3600)
+#define TIME_TO_ON_MAX_TIME_AFTER_S ((unsigned int)3600)
+#define CYCLES_OF_SLEEP_S ((unsigned int)60)
+
 #endif
 
 #define TEMP_SETPOINT_INC   5
 #define TEMP_SETPOINT_MAX   220
 #define TEMP_SETPOINT_MIN   130
 #define TEMP_SETPOINT_OFF   0
+
+#define STOP_STR ((const char*)"STOP")
+
 
 typedef enum
 {
@@ -177,11 +189,7 @@ typedef enum
 } t_wake_up_cause;
 volatile t_wake_up_cause wake_up_cause = CYCLIC;
 
-#define CYCLES_OF_SLEEP_S   (unsigned int) 20
-#define TIMER_HOLD          (unsigned int) -1
-#define TIMEOUT_TO_SLEEP_MS (unsigned int) 10000
-
-volatile long timer_to_sleep = TIMER_HOLD;
+volatile long timer_to_sleep = 0;
 uint8_t remaining_sleep_cycles = 0;
 // ========================== End of Header ====================================
 
@@ -217,7 +225,11 @@ void setup()
     LED_OFF;
 
     sample_data();
+    
+    td.setpoint = (int)(td.temperature/10)*10;
+    td.remaining_time_s = TIMER_DISABLED;
     set_thermo_state(&state_time_to_off);
+    state_current->oled_update();
     timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
 }
 
@@ -239,11 +251,12 @@ void click_time_to_off(t_push_button_state click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.remaining_time_s += TIME_INCREMENT_S;
-        if (td.remaining_time_s > TIME_MAX_S) {
-            td.remaining_time_s = TIME_OFF;
+        if (td.remaining_time_s > TIME_TO_OFF_MAX_S) {
+            td.remaining_time_s = TIMER_DISABLED;
         }
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        oled.clear();
         set_thermo_state(&state_time_to_on);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
@@ -258,11 +271,12 @@ void click_time_to_on(t_push_button_state click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.remaining_time_s += TIME_INCREMENT_S;
-        if (td.remaining_time_s > TIME_MAX_S) {
-            td.remaining_time_s = TIME_OFF;
+        if (td.remaining_time_s > TIME_TO_ON_MAX_S) {
+            td.remaining_time_s = TIMER_DISABLED;
         }
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        oled.clear();
         set_thermo_state(&state_temp_setpoint);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
@@ -276,19 +290,25 @@ void click_time_to_on(t_push_button_state click_type)
 void click_temp_setpoint(t_push_button_state click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.setpoint += TEMP_SETPOINT_INC;
-
-        if (td.setpoint == TEMP_SETPOINT_OFF) {
+        if(td.setpoint == TEMP_SETPOINT_OFF) {
             td.setpoint = TEMP_SETPOINT_MIN;
         }
-        else if (td.remaining_time_s > TEMP_SETPOINT_MAX) {
-            td.remaining_time_s = TEMP_SETPOINT_OFF;
-        }
         else {
-            /* Nothing */
+            td.setpoint += TEMP_SETPOINT_INC;
+
+            if (td.setpoint == TEMP_SETPOINT_OFF) {
+                td.setpoint = TEMP_SETPOINT_MIN;
+            }
+            else if (td.setpoint > TEMP_SETPOINT_MAX) {
+                td.setpoint = TEMP_SETPOINT_OFF;
+            }
+            else {
+                /* Nothing */
+            }
         }
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        oled.clear();
         set_thermo_state(&state_time_to_off);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
@@ -304,9 +324,13 @@ void heater_on()
     if (td.heater_status == HEATER_ON)
         return;
 
-    do_relay_pulse();
     td.heater_status = HEATER_ON;
+
+#ifdef USE_DEBUG
     LED_ON;
+#else
+    do_relay_pulse();
+#endif
 }
 
 void heater_off()
@@ -314,17 +338,23 @@ void heater_off()
     if (td.heater_status == HEATER_OFF)
         return;
 
-    do_relay_pulse();
     td.heater_status = HEATER_OFF;
+    
+#ifdef USE_DEBUG
     LED_OFF;
+#else
+    do_relay_pulse();
+#endif
 }
 
 //-------------- Thermostat Logic Section --------------
 
 void thermo_logic_time_to_off()
 {
-    if (td.remaining_time_s == 0) {
+    if (td.remaining_time_s == TIMER_DISABLED || 
+       (td.remaining_time_s == TIME_ZERO)) {
         heater_off();
+        td.remaining_time_s = TIMER_DISABLED;
     }
     else {
         heater_on();
@@ -333,13 +363,13 @@ void thermo_logic_time_to_off()
 
 void thermo_logic_time_to_on()
 {
-    if (td.remaining_time_s == 0) {
+    if (td.remaining_time_s == TIME_ZERO) {
         heater_on();
         
         /* The following code is used to turn OFF the heater 
          * at some point. If not used, heater would be ON forever! */
-        td.remaining_time_s = TIME_TIME_TO_ON_MAX_TIME_S;
         set_thermo_state(&state_time_to_off);
+        td.remaining_time_s = TIME_TO_ON_MAX_TIME_AFTER_S;
     }
     else {
         heater_off();
@@ -373,14 +403,21 @@ void during_power_save()
 {
     if (remaining_sleep_cycles == 0) {
         remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
-
+        
         sample_data();
-        tx_to_base();
         state_current->thermo_logic();
+        
+        tx_to_base();
     }
     else {
-        if (td.remaining_time_s != 0)
+        if ((td.remaining_time_s != TIMER_DISABLED) &&
+            (td.remaining_time_s > TIME_ZERO)) {
             td.remaining_time_s--;
+            
+            if (td.remaining_time_s == TIME_ZERO) {
+                remaining_sleep_cycles = 0;
+            }
+        }
 
         if (remaining_sleep_cycles != 0)
             remaining_sleep_cycles--;
@@ -392,11 +429,12 @@ void during_power_save()
 void during_power_on()
 {
     static long long timer_1s = millis() + 1000;
-
+    
     if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
 
-        if (td.remaining_time_s != TIME_OFF)
+        if ((td.remaining_time_s != TIMER_DISABLED) &&
+            (td.remaining_time_s > TIME_ZERO))
             td.remaining_time_s--;
     }
 
@@ -405,6 +443,7 @@ void during_power_on()
     if (millis() > timer_to_sleep) {
         /* encapsular a una funcio */
         state_current->thermo_logic();
+        tx_to_base();
         remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
         td.power_mode = POWER_SAVE;
     }
@@ -413,36 +452,71 @@ void during_power_on()
 void set_thermo_state(t_state_functions *new_state)
 {
     state_current = new_state;
+    td.remaining_time_s = TIMER_DISABLED;
+}
+
+void get_time_formatted(char *in_buff)
+{
+    uint8_t hours = 0;
+    uint8_t minutes = 0;
+    
+    if(td.remaining_time_s != TIMER_DISABLED) {
+        hours = td.remaining_time_s / 3600;
+        minutes = (td.remaining_time_s % 3600) / 60;
+        sprintf(in_buff, "%d:%.2d", hours, minutes);
+    }
+    else {
+        sprintf(in_buff, STOP_STR);
+    }
 }
 
 void oled_update_time_to_off()
 {
+    char buff[17];
+    
+    oled.home();
     oled.set2X();
 
     oled.println("Time To OFF");
-    oled.println(td.remaining_time_s);
+    
+    oled.clearToEOL();
+    get_time_formatted(buff);
+    oled.println(buff);
 }
 
 void oled_update_time_to_on()
 {
+    char buff[17];
+    
+    oled.home();
     oled.set2X();
 
     oled.println("Time To ON");
-    oled.println(td.remaining_time_s);
+    
+    oled.clearToEOL();
+    get_time_formatted(buff);
+    oled.println(buff);
 }
 
 void oled_update_temp_setpoint()
 {
+    char buff[17];
+    
+    oled.home();
     oled.set2X();
 
     oled.println("Setpoint");
-    oled.println(td.temperature);
-    oled.println(td.setpoint);
+    sprintf(buff, "Real: %s", String((td.temperature/10.0),1).c_str());
+    oled.println(buff);
+    
+    oled.clearToEOL();
+    
+    sprintf(buff, "Obj.: %s", (td.setpoint==0) ? STOP_STR : String((td.setpoint/10.0),1).c_str());
+    oled.println(buff);
 }
 
 void sample_data()
 {
-    char buff[16];
     int safeguard_loop = 20;
 
     while ((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
@@ -451,14 +525,17 @@ void sample_data()
     td.temperature = DHT.temperature * 10;
     td.humidity = DHT.humidity * 10;
     td.vbat_mv = get_vbat_mv();
-
-    sprintf(buff, "%d:%d:%d:%d", td.heater_status, td.temperature, td.humidity, td.vbat_mv);
-    DEBUGLN(buff);
 }
 
 void tx_to_base()
 {
     uint8_t tx_buff[TX_BUFF_LEN];
+    
+#ifdef USE_DEBUG
+    char buff[16];    
+    sprintf(buff, "%d:%d:%d:%d", td.heater_status, td.temperature, td.humidity, td.vbat_mv);
+    DEBUGLN(buff);
+#endif
 
     tx_buff[0] = td.temperature & 0x00FF;
     tx_buff[1] = (td.temperature >> 8);
@@ -474,7 +551,7 @@ void tx_to_base()
 
     //    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
 
-    tx_buff[9] = td.heater_status;
+    tx_buff[9] = (uint8_t)td.heater_status;
 
     // radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
     radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
@@ -503,6 +580,7 @@ void go_to_sleep()
     detachInterrupt(digitalPinToInterrupt(BUTTON_IN));
 
     if (wake_up_cause == INT_EXT) {
+        DEBUGLN("INT_EXT");
 
         // Ojo s'ha de testejar. Struct compare!!
         //        if(state_current == state_time_to_off) {
@@ -512,6 +590,7 @@ void go_to_sleep()
         timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
         td.power_mode = POWER_ON;
         init_oled();
+        state_current->oled_update();
     }
 }
 
@@ -566,17 +645,19 @@ static void read_and_debounce_pushbutton()
         break;
 
     case PB_DEBOUCE:
-        if ((millis() - tick_time) > VERYLONG_CLICK_TIME_MS) {
-            pb_state = PB_VERYLONG_CLICK_CONFIRMED;
-        }
-        else if ((millis() - tick_time) > LONG_CLICK_TIME_MS) {
-            pb_state = PB_LONG_CLICK_CONFIRMED;
-        }
-        else if ((millis() - tick_time) > SHORT_CLICK_TIME_MS) {
-            pb_state = PB_SHORT_CLICK_CONFIRMED;
-        }
-        else if (digitalRead(BUTTON_IN) == PB_RELEASED) {
-            pb_state = PB_IDLE;
+        if (digitalRead(BUTTON_IN) == PB_RELEASED) {
+            if ((millis() - tick_time) > VERYLONG_CLICK_TIME_MS) {
+                pb_state = PB_VERYLONG_CLICK_CONFIRMED;
+            }
+            else if ((millis() - tick_time) > LONG_CLICK_TIME_MS) {
+                pb_state = PB_LONG_CLICK_CONFIRMED;
+            }
+            else if ((millis() - tick_time) > SHORT_CLICK_TIME_MS) {
+                pb_state = PB_SHORT_CLICK_CONFIRMED;
+            }
+            else {
+                pb_state = PB_IDLE;
+            }
         }
         else {
             /* Keep the current state */
