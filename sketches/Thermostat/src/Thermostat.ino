@@ -112,6 +112,8 @@ typedef void (*t_click_callback)(t_push_button_state);
 /* Function prototypes */
 void rsi_red();
 void go_to_sleep();
+static uint16_t read_vbat_mv();
+static void read_temp_data();
 
 void thermo_logic_time_to_off();
 void oled_update_time_to_off();
@@ -517,14 +519,8 @@ void oled_update_temp_setpoint()
 
 void sample_data()
 {
-    int safeguard_loop = 20;
-
-    while ((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
-        delay(50);
-
-    td.temperature = DHT.temperature * 10;
-    td.humidity = DHT.humidity * 10;
-    td.vbat_mv = get_vbat_mv();
+    read_temp_data();
+    td.vbat_mv = read_vbat_mv();
 }
 
 void tx_to_base()
@@ -594,7 +590,7 @@ void go_to_sleep()
     }
 }
 
-static uint16_t get_vbat_mv()
+static uint16_t read_vbat_mv()
 {
     analogReference(INTERNAL); // Referencia interna de 1.1V
 
@@ -610,6 +606,18 @@ static uint16_t get_vbat_mv()
     vbat = vbat + MAGIC_VBAT_OFFSET_MV;
 
     return (uint16_t) vbat;
+}
+
+static void read_temp_data()
+{
+    int safeguard_loop = 20;
+
+    while ((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
+        delay(50);
+
+    /* To avoid use of floats, multiply values by 10 and use 'de */
+    td.temperature = DHT.temperature * 10;
+    td.humidity = DHT.humidity * 10;
 }
 
 static void do_relay_pulse()
