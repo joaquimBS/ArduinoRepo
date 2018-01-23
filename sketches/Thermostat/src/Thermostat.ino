@@ -21,7 +21,7 @@
 #define ENABLE_VBAT_DIVISOR  ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
 #define DISABLE_VBAT_DIVISOR ; // digitalWrite(EN_VBAT_DIV, LOW)
 
-#define TX_BUFF_LEN ((uint8_t) 10)
+#define TX_BUFF_LEN ((uint8_t) 12)
 #define MAGIC_VBAT_OFFSET_MV ((int8_t) -40)
 
 #define WITH_RFM69
@@ -55,13 +55,14 @@ RFM69 radio;
 //                             0xEF40 for windbond 16/64mbit flash
 //*****************************************************************************************************************************
 SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
+boolean flash_is_awake = false;
 #endif
 
 dht DHT;
 
-#define SHORT_CLICK_TIME_MS 100
-#define LONG_CLICK_TIME_MS 1000
-#define VERYLONG_CLICK_TIME_MS 3000
+#define SHORT_CLICK_TIME_MS 80
+#define LONG_CLICK_TIME_MS 500
+#define VERYLONG_CLICK_TIME_MS 2000
 #define PB_PRESSED LOW
 #define PB_RELEASED HIGH
 
@@ -74,14 +75,16 @@ dht DHT;
 
 #ifdef USE_DEBUG
 #define TIMEOUT_TO_SLEEP_MS ((unsigned int)3000)
-#define TIME_INCREMENT_S ((unsigned int)10)
+#define TIME_INCREMENT1_S ((unsigned int)10)
+#define TIME_INCREMENT2_S ((unsigned int)10)
 #define TIME_TO_OFF_MAX_S ((unsigned int)90)
 #define TIME_TO_ON_MAX_S ((unsigned int)90)
 #define TIME_TO_ON_MAX_TIME_AFTER_S ((unsigned int)5)
 #define CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
 #define TIMEOUT_TO_SLEEP_MS ((unsigned int)10000)
-#define TIME_INCREMENT_S ((unsigned int)1800)
+#define TIME_INCREMENT1_S ((unsigned int)1802)
+#define TIME_INCREMENT2_S ((unsigned int)901)
 #define TIME_TO_OFF_MAX_S ((unsigned int)4*3600)
 #define TIME_TO_ON_MAX_S ((unsigned int)12*3600)
 #define TIME_TO_ON_MAX_TIME_AFTER_S ((unsigned int)3600)
@@ -208,7 +211,8 @@ void init_io_pins()
     pinMode(OLED_VCC, OUTPUT);
     pinMode(BUTTON_IN, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
-    pinMode(RELAY_TRIGGER, INPUT_PULLUP);
+    pinMode(RELAY_PLUS, OUTPUT);
+    pinMode(RELAY_MINUS, OUTPUT);
 }
 
 void setup()
@@ -219,7 +223,7 @@ void setup()
     init_io_pins();
 
     LED_ON;
-
+    
     init_radio();
     init_flash();
     init_oled();
@@ -233,14 +237,12 @@ void setup()
     set_thermo_state(&state_time_to_off);
     state_current->oled_update();
     timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+    
+    heater_off();
 }
 
 void loop()
 {
-    //    if (radio.receiveDone()) {
-    //       CheckForWirelessHEX(radio, flash, false);
-    //    }
-
     if (td.power_mode == POWER_SAVE) {
         during_power_save();
     }
@@ -252,7 +254,7 @@ void loop()
 void click_time_to_off(t_push_button_state click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.remaining_time_s += TIME_INCREMENT_S;
+        td.remaining_time_s += TIME_INCREMENT1_S;
         if (td.remaining_time_s > TIME_TO_OFF_MAX_S) {
             td.remaining_time_s = TIMER_DISABLED;
         }
@@ -272,7 +274,7 @@ void click_time_to_off(t_push_button_state click_type)
 void click_time_to_on(t_push_button_state click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.remaining_time_s += TIME_INCREMENT_S;
+        td.remaining_time_s += TIME_INCREMENT2_S;
         if (td.remaining_time_s > TIME_TO_ON_MAX_S) {
             td.remaining_time_s = TIMER_DISABLED;
         }
@@ -323,30 +325,34 @@ void click_temp_setpoint(t_push_button_state click_type)
 
 void heater_on()
 {
-    if (td.heater_status == HEATER_ON)
-        return;
-
     td.heater_status = HEATER_ON;
 
 #ifdef USE_DEBUG
-    LED_ON;
-#else
-    do_relay_pulse();
+//    LED_ON;
 #endif
+    digitalWrite(RELAY_MINUS, LOW);
+    digitalWrite(RELAY_PLUS, HIGH);
+    
+    delay(250);
+    
+    digitalWrite(RELAY_MINUS, LOW);
+    digitalWrite(RELAY_PLUS, LOW);
 }
 
 void heater_off()
 {
-    if (td.heater_status == HEATER_OFF)
-        return;
-
     td.heater_status = HEATER_OFF;
     
 #ifdef USE_DEBUG
-    LED_OFF;
-#else
-    do_relay_pulse();
+//    LED_OFF;
 #endif
+    digitalWrite(RELAY_MINUS, HIGH);
+    digitalWrite(RELAY_PLUS, LOW);
+    
+    delay(250);
+    
+    digitalWrite(RELAY_MINUS, LOW);
+    digitalWrite(RELAY_PLUS, LOW);
 }
 
 //-------------- Thermostat Logic Section --------------
@@ -432,6 +438,10 @@ void during_power_on()
 {
     static long long timer_1s = millis() + 1000;
     
+    if (radio.receiveDone()) {
+        CheckForWirelessHEX(radio, flash, false);
+    }
+    
     if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
 
@@ -465,10 +475,10 @@ void get_time_formatted(char *in_buff)
     if(td.remaining_time_s != TIMER_DISABLED) {
         hours = td.remaining_time_s / 3600;
         minutes = (td.remaining_time_s % 3600) / 60;
-        sprintf(in_buff, "%d:%.2d", hours, minutes);
+        sprintf(in_buff, "%d:%.2d h", hours, minutes);
     }
     else {
-        sprintf(in_buff, STOP_STR);
+        sprintf(in_buff, "APAGAT", hours, minutes);
     }
 }
 
@@ -479,10 +489,14 @@ void oled_update_time_to_off()
     oled.home();
     oled.set2X();
 
-    oled.println("Time To OFF");
-    
-    oled.clearToEOL();
+    oled.println("Encendre");
+    oled.println("durant");
+
     get_time_formatted(buff);
+    oled.clearToEOL();
+    oled.println(buff);
+    sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
+                                 String(td.humidity/10).c_str());
     oled.println(buff);
 }
 
@@ -493,10 +507,14 @@ void oled_update_time_to_on()
     oled.home();
     oled.set2X();
 
-    oled.println("Time To ON");
-    
-    oled.clearToEOL();
+    oled.println("Encendre");
+    oled.println("en");
+
     get_time_formatted(buff);
+    oled.clearToEOL();
+    oled.println(buff);
+    sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
+                                 String(td.humidity/10).c_str());
     oled.println(buff);
 }
 
@@ -545,9 +563,11 @@ void tx_to_base()
     tx_buff[6] = td.vbat_mv & 0x00FF;
     tx_buff[7] = (td.vbat_mv >> 8);
 
-    //    tx_buff[8] = last_sample.cycle_ms; // Ha de ser menor que 255, sinó overflow
-
+    tx_buff[8] = (uint8_t)td.mode;
     tx_buff[9] = (uint8_t)td.heater_status;
+    
+    tx_buff[10] = td.remaining_time_s & 0x00FF;
+    tx_buff[11] = (td.remaining_time_s >> 8);
 
     // radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
     radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
@@ -555,7 +575,7 @@ void tx_to_base()
 
 void go_to_sleep()
 {
-    // flash.sleep();   /* Only if it was awake. */
+    flash_sleep();
     radio.sleep();
     wake_up_cause = CYCLIC;
 
@@ -563,7 +583,6 @@ void go_to_sleep()
     pinMode(OLED_VCC, OUTPUT);
     pinMode(BUTTON_IN, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
-    pinMode(RELAY_TRIGGER, INPUT_PULLUP);
 
     attachInterrupt(digitalPinToInterrupt(BUTTON_IN), rsi_red, LOW);
     // Enter power down state with ADC and BOD module disabled.
@@ -577,16 +596,14 @@ void go_to_sleep()
 
     if (wake_up_cause == INT_EXT) {
         DEBUGLN("INT_EXT");
-
-        // Ojo s'ha de testejar. Struct compare!!
-        //        if(state_current == state_time_to_off) {
-        //            heater_on();
-        //        }
-
+        
         timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
         td.power_mode = POWER_ON;
+        
         init_oled();
         state_current->oled_update();
+        
+        flash_wakeup();
     }
 }
 
@@ -622,14 +639,14 @@ static void read_temp_data()
 
 static void do_relay_pulse()
 {
-    pinMode(RELAY_TRIGGER, OUTPUT);
+    pinMode(RELAY_PLUS, OUTPUT);
     delay(50);
 
-    digitalWrite(RELAY_TRIGGER, LOW);
+    digitalWrite(RELAY_PLUS, LOW);
     delay(250);
-    digitalWrite(RELAY_TRIGGER, HIGH);
+    digitalWrite(RELAY_PLUS, HIGH);
 
-    pinMode(RELAY_TRIGGER, INPUT_PULLUP);
+    pinMode(RELAY_PLUS, INPUT_PULLUP);
 }
 
 /*
@@ -704,8 +721,30 @@ void init_flash()
 {
 #ifdef WITH_SPIFLASH
     if (flash.initialize()) {
-        flash.sleep();
+        flash_is_awake = true;
     }
+#endif
+}
+
+void flash_sleep()
+{
+#ifdef WITH_SPIFLASH
+    if(flash_is_awake == false)
+        return;
+    
+    flash.sleep();
+    flash_is_awake = false;
+#endif
+}
+
+void flash_wakeup()
+{
+#ifdef WITH_SPIFLASH
+    if(flash_is_awake == true)
+        return;
+    
+    flash.wakeup();
+    flash_is_awake = true;
 #endif
 }
 
