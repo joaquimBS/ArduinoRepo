@@ -1,36 +1,27 @@
-// AVR Libraries
-// #include <avr/power.h>
-// #include <avr/sleep.h>
-
 // Arduino libraries
 // #include <SoftwareSerial.h>
+#include <SPI.h>           //comes with Arduino IDE (www.arduino.cc)
+#include <Wire.h>          //comes with Arduino IDE (www.arduino.cc)
 
 // Custom Arduino libraries
 #include "Thermostat.h"
-// #include "RTClib.h"         // https://github.com/adafruit/RTClib
-// #include <MemoryFree.h>
+
+// #include "MemoryFree.h"
 #include "dht.h"
-#include "LowPower.h"           // https://github.com/rocketscream/Low-Power
-// #include "FlashSpiFifo.h"
+#include "LowPower.h"      // https://github.com/rocketscream/Low-Power
+#include "RTClib.h"        // https://github.com/adafruit/RTClib/tree/1.2.0
 
-#include <SPI.h>           //comes with Arduino IDE (www.arduino.cc)
-#include <RFM69.h>         //get it here: https://github.com/lowpowerlab/RFM69
-//#include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
-#include <RFM69_OTA.h>     //get it here: https://github.com/lowpowerlab/RFM69
-
-#define ENABLE_VBAT_DIVISOR  ; //digitalWrite(EN_VBAT_DIV, HIGH); delay(1000)
-#define DISABLE_VBAT_DIVISOR ; // digitalWrite(EN_VBAT_DIV, LOW)
-
-#define TX_BUFF_LEN ((uint8_t) 12)
-#define MAGIC_VBAT_OFFSET_MV ((int8_t) -40)
-
+/*-------------------------------- Defines -----------------------------------*/
 #define WITH_RFM69
 #define WITH_SPIFLASH
 #define WITH_OLED
 
+#define TX_BUFF_LEN ((uint8_t) 12)
+#define MAGIC_VBAT_OFFSET_MV ((int8_t) -40) // Empirically obtained
+
 #ifdef WITH_OLED
-#define I2C_ADDRESS 0x3C
-#include "SSD1306Ascii.h"
+#define OLED_I2C_ADDR 0x3C
+#include "SSD1306Ascii.h"   // https://github.com/greiman/SSD1306Ascii
 #include "SSD1306AsciiAvrI2c.h"
 SSD1306AsciiAvrI2c oled;
 #define ENABLE_OLED_VCC  digitalWrite(OLED_VCC, HIGH)
@@ -38,68 +29,72 @@ SSD1306AsciiAvrI2c oled;
 #endif
 
 #if defined(WITH_RFM69)
+#include <RFM69.h>         // https://github.com/lowpowerlab/RFM69
+//#include <RFM69_ATC.h>     // https://github.com/lowpowerlab/RFM69
+#include <RFM69_OTA.h>     // https://github.com/lowpowerlab/RFM69
 RFM69 radio;
-#define GATEWAYID   1
+#define GATEWAYID 1
 #define NETWORKID 100
 #define NODEID 11
 #define FREQUENCY RF69_868MHZ
-#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+#define ENCRYPTKEY "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
 #endif
 
 #if defined(WITH_SPIFLASH)
-//*****************************************************************************************************************************
+//******************************************************************************
 // flash(SPI_CS, MANUFACTURER_ID)
 // SPI_CS          - CS pin attached to SPI flash chip (8 in case of Moteino)
 // MANUFACTURER_ID - OPTIONAL, 0x1F44 for adesto(ex atmel) 4mbit flash
 //                             0xEF30 for windbond 4mbit flash
 //                             0xEF40 for windbond 16/64mbit flash
-//*****************************************************************************************************************************
+//******************************************************************************
 SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
 boolean flash_is_awake = false;
 #endif
 
+#define ENABLE_RTC_VCC  digitalWrite(RTC_VCC, HIGH)
+#define DISABLE_RTC_VCC digitalWrite(RTC_VCC, LOW)
+
 dht DHT;
+RTC_DS1307 rtc;
 
 #define SHORT_CLICK_TIME_MS 80
 #define LONG_CLICK_TIME_MS 500
-#define VERYLONG_CLICK_TIME_MS 2000
-#define PB_PRESSED LOW
+#define VERYLONG_CLICK_TIME_MS 3000
+#define PB_PRESSED LOW  // Pin must be INPUT_PULLUP and pushbutton to GND
 #define PB_RELEASED HIGH
 
-// Custom defines
 #define SERIAL_BR 115200
-#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
 #define TIME_ZERO ((uint16_t)0)
 #define TIMER_DISABLED ((uint16_t)-1)
 
 #ifdef USE_DEBUG
-#define TIMEOUT_TO_SLEEP_MS ((unsigned int)3000)
+#define DEFAULT_TIMEOUT_TO_SLEEP_MS ((unsigned int)3000)
 #define TIME_INCREMENT1_S ((unsigned int)10)
 #define TIME_INCREMENT2_S ((unsigned int)10)
 #define TIME_TO_OFF_MAX_S ((unsigned int)90)
 #define TIME_TO_ON_MAX_S ((unsigned int)90)
-#define TIME_TO_ON_MAX_TIME_AFTER_S ((unsigned int)5)
-#define CYCLES_OF_SLEEP_S ((unsigned int)20)
+#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)5)
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
-#define TIMEOUT_TO_SLEEP_MS ((unsigned int)10000)
-#define TIME_INCREMENT1_S ((unsigned int)1802)
+#define DEFAULT_TIMEOUT_TO_SLEEP_MS ((unsigned int)10000)
+#define TIME_INCREMENT1_S ((unsigned int)1801)
 #define TIME_INCREMENT2_S ((unsigned int)901)
-#define TIME_TO_OFF_MAX_S ((unsigned int)4*3600)
-#define TIME_TO_ON_MAX_S ((unsigned int)12*3600)
-#define TIME_TO_ON_MAX_TIME_AFTER_S ((unsigned int)3600)
-#define CYCLES_OF_SLEEP_S ((unsigned int)60)
-
+#define TIME_TO_OFF_MAX_S ((unsigned int)4*3601)
+#define TIME_TO_ON_MAX_S ((unsigned int)12*3601)
+#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)3600)
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
 #endif
 
-#define TEMP_SETPOINT_INC   5
-#define TEMP_SETPOINT_MAX   220
-#define TEMP_SETPOINT_MIN   130
-#define TEMP_SETPOINT_OFF   0
+#define TEMP_SETPOINT_INC 5
+#define TEMP_SETPOINT_MAX 220
+#define TEMP_SETPOINT_MIN 130
+#define TEMP_SETPOINT_OFF 0
 
 #define STOP_STR ((const char*)"STOP")
 
-
+/*------------------------------ Data Types ---------------------------------*/
 typedef enum
 {
     PB_IDLE = 0,
@@ -107,109 +102,134 @@ typedef enum
     PB_SHORT_CLICK_CONFIRMED,
     PB_LONG_CLICK_CONFIRMED,
     PB_VERYLONG_CLICK_CONFIRMED
-} t_push_button_state;
-
-typedef void (*t_callback)(void);
-typedef void (*t_click_callback)(t_push_button_state);
-
-/* Function prototypes */
-void rsi_red();
-void go_to_sleep();
-static uint16_t read_vbat_mv();
-static void read_temp_data();
-
-void thermo_logic_time_to_off();
-void oled_update_time_to_off();
-void click_time_to_off(t_push_button_state);
-
-void thermo_logic_time_to_on();
-void oled_update_time_to_on();
-void click_time_to_on(t_push_button_state);
-
-void thermo_logic_temp_setpoint();
-void oled_update_temp_setpoint();
-void click_temp_setpoint(t_push_button_state);
-
-/***********************/
+} PushButtonState;
 
 typedef enum
 {
     MODE_TIME = 0,
     MODE_TEMP
-} t_thermo_mode;
+} ThermostatMode;
 
 typedef enum
 {
     HEATER_OFF = 0,
     HEATER_ON
-} t_heater_status;
+} HeaterStatus;
 
 typedef enum
 {
     POWER_ON = 0,
     POWER_SAVE
-} t_thermo_power_mode;
+} ThermostatPowerMode;
+
+typedef enum
+{
+    CYCLIC = 0,
+    INT_EXT
+} WakeUpCause;
+
+typedef void (*VoidCallback)(void);
+typedef void (*ClickCallback)(PushButtonState);
 
 typedef struct
 {
-    t_heater_status heater_status;
-    t_thermo_mode mode;
-    t_thermo_power_mode power_mode;
+    HeaterStatus heater_status;
+    ThermostatMode mode;
+    ThermostatPowerMode power_mode;
     uint16_t remaining_time_s;
     uint16_t humidity;
     uint16_t temperature;
     uint16_t setpoint;
     uint16_t vbat_mv;
-} t_thermo_data;
-
-t_thermo_data td = {0};
+} ThermostatData;
 
 typedef struct
 {
-    t_callback thermo_logic;
-    t_callback oled_update;
-    t_click_callback click_callback;
-} t_state_functions;
+    VoidCallback thermo_logic;
+    VoidCallback oled_update;
+    ClickCallback click_callback;
+} StateFunctions;
 
-static t_state_functions state_time_to_off{
-    thermo_logic_time_to_off,
-    oled_update_time_to_off,
-    click_time_to_off};
+/*-------------------------- Routine Prototypes ------------------------------*/
+void RsiButtonCtrl();
+void InitIOPins();
+void InitRadio();
+void InitFlash();
+void InitOled();
+void InitRTC();
 
-static t_state_functions state_time_to_on{
-    thermo_logic_time_to_on,
-    oled_update_time_to_on,
-    click_time_to_on};
+void GoToSleep();
+uint16_t ReadVbatMv();
+void ReadTempData();
+void TransmitToBase();
+void SampleData();
+void FlashWakeup();
+void FlashSleep();
+void ReadAndDebouncePushbutton();
+void ResetTimerToSleep();
+void HeaterOFF();
+void HeaterON();
+void SetThermoState(StateFunctions *new_state);
+void GetTimeFormatted(char *in_buff);
 
-static t_state_functions state_temp_setpoint{
-    thermo_logic_temp_setpoint,
-    oled_update_temp_setpoint,
-    click_temp_setpoint};
+void DuringPowerON();
+void DuringPowerSave();
 
-static t_state_functions *state_current = &state_time_to_off;
+void ThermoLogicTimeToOff();
+void OledUpdateTimeToOff();
+void ClickTimeToOff(PushButtonState);
 
-typedef enum
-{
-    CYCLIC = 0, INT_EXT
-} t_wake_up_cause;
-volatile t_wake_up_cause wake_up_cause = CYCLIC;
+void ThermoLogicTimeToOn();
+void OledUpdateTimeToOn();
+void ClickTimeToOn(PushButtonState);
 
-volatile long timer_to_sleep = 0;
+void ThermoLogicTempSetpoint();
+void OledUpdateTempSetpoint();
+void ClickTempSetpoint(PushButtonState);
+
+/* ---------------------------- Global Variables ---------------------------- */
+ThermostatData td = {0};
+volatile WakeUpCause wake_up_cause = CYCLIC;
+
+StateFunctions state_time_to_off{
+    ThermoLogicTimeToOff,
+    OledUpdateTimeToOff,
+    ClickTimeToOff};
+
+StateFunctions state_time_to_on{
+    ThermoLogicTimeToOn,
+    OledUpdateTimeToOn,
+    ClickTimeToOn};
+
+StateFunctions state_temp_setpoint{
+    ThermoLogicTempSetpoint,
+    OledUpdateTempSetpoint,
+    ClickTempSetpoint};
+
+StateFunctions *state_current = &state_time_to_off;
+
+long timer_to_sleep = 0;
 uint8_t remaining_sleep_cycles = 0;
-// ========================== End of Header ====================================
 
-void rsi_red()
+/* Thermostat configuration (maybe a struct) */
+uint16_t sleep_cycles_config = DEFAULT_CYCLES_OF_SLEEP_S;
+uint16_t timeout_to_sleep_config = DEFAULT_TIMEOUT_TO_SLEEP_MS;
+uint16_t on_after_time_to_on_config = DEFAULT_ON_AFTER_TIME_TO_ON_S;
+// ========================== End of Header ================================= //
+
+/* -------------------------------- Routines -------------------------------- */
+void RsiButtonCtrl()
 {
     wake_up_cause = INT_EXT;
 }
 
-void init_io_pins()
+void InitIOPins()
 {
     SET_DIGITAL_PINS_AS_INPUTS();
 
     // -- Custom IO setup --
     pinMode(OLED_VCC, OUTPUT);
-    pinMode(BUTTON_IN, INPUT_PULLUP);
+    pinMode(BUTTON_CTRL, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_PLUS, OUTPUT);
     pinMode(RELAY_MINUS, OUTPUT);
@@ -220,38 +240,44 @@ void setup()
     Serial.begin(SERIAL_BR);
     while (!Serial);
 
-    init_io_pins();
+    /* IO Pins need to be initialized prior to other peripherals start */
+    InitIOPins();
 
     LED_ON;
     
-    init_radio();
-    init_flash();
-    init_oled();
-
+    /* Peripherals initialization block */
+    Wire.begin(); // CAUTION. What could happen if other Wire.begin() is issued?
+    
+    InitRadio();
+    InitFlash();
+    InitOled();
+    InitRTC();
+    
     LED_OFF;
 
-    sample_data();
+    // Make an initial data sampling.
+    SampleData();
     
+    // Set initial values to some variables
     td.setpoint = (int)(td.temperature/10)*10;
     td.remaining_time_s = TIMER_DISABLED;
-    set_thermo_state(&state_time_to_off);
+    SetThermoState(&state_time_to_off);
     state_current->oled_update();
-    timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
     
-    heater_off();
+    HeaterOFF();
 }
 
 void loop()
 {
     if (td.power_mode == POWER_SAVE) {
-        during_power_save();
+        DuringPowerSave();
     }
     else {
-        during_power_on();
+        DuringPowerON();
     }
 }
 
-void click_time_to_off(t_push_button_state click_type)
+void ClickTimeToOff(PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.remaining_time_s += TIME_INCREMENT1_S;
@@ -261,7 +287,7 @@ void click_time_to_off(t_push_button_state click_type)
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         oled.clear();
-        set_thermo_state(&state_time_to_on);
+        SetThermoState(&state_time_to_on);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -271,7 +297,7 @@ void click_time_to_off(t_push_button_state click_type)
     }
 }
 
-void click_time_to_on(t_push_button_state click_type)
+void ClickTimeToOn(PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         td.remaining_time_s += TIME_INCREMENT2_S;
@@ -281,7 +307,7 @@ void click_time_to_on(t_push_button_state click_type)
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         oled.clear();
-        set_thermo_state(&state_temp_setpoint);
+        SetThermoState(&state_temp_setpoint);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -291,7 +317,7 @@ void click_time_to_on(t_push_button_state click_type)
     }
 }
 
-void click_temp_setpoint(t_push_button_state click_type)
+void ClickTempSetpoint(PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         if(td.setpoint == TEMP_SETPOINT_OFF) {
@@ -313,7 +339,7 @@ void click_temp_setpoint(t_push_button_state click_type)
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         oled.clear();
-        set_thermo_state(&state_time_to_off);
+        SetThermoState(&state_time_to_off);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -323,7 +349,7 @@ void click_temp_setpoint(t_push_button_state click_type)
     }
 }
 
-void heater_on()
+void HeaterON()
 {
     td.heater_status = HEATER_ON;
 
@@ -339,7 +365,7 @@ void heater_on()
     digitalWrite(RELAY_PLUS, LOW);
 }
 
-void heater_off()
+void HeaterOFF()
 {
     td.heater_status = HEATER_OFF;
     
@@ -356,35 +382,34 @@ void heater_off()
 }
 
 //-------------- Thermostat Logic Section --------------
-
-void thermo_logic_time_to_off()
+void ThermoLogicTimeToOff()
 {
     if (td.remaining_time_s == TIMER_DISABLED || 
        (td.remaining_time_s == TIME_ZERO)) {
-        heater_off();
+        HeaterOFF();
         td.remaining_time_s = TIMER_DISABLED;
     }
     else {
-        heater_on();
+        HeaterON();
     }
 }
 
-void thermo_logic_time_to_on()
+void ThermoLogicTimeToOn()
 {
     if (td.remaining_time_s == TIME_ZERO) {
-        heater_on();
+        HeaterON();
         
         /* The following code is used to turn OFF the heater 
          * at some point. If not used, heater would be ON forever! */
-        set_thermo_state(&state_time_to_off);
-        td.remaining_time_s = TIME_TO_ON_MAX_TIME_AFTER_S;
+        SetThermoState(&state_time_to_off);
+        td.remaining_time_s = on_after_time_to_on_config;
     }
     else {
-        heater_off();
+        HeaterOFF();
     }
 }
 
-void thermo_logic_temp_setpoint()
+void ThermoLogicTempSetpoint()
 {
     uint16_t real_setpoint = td.setpoint;
 
@@ -396,10 +421,10 @@ void thermo_logic_temp_setpoint()
     }
 
     if (td.temperature >= real_setpoint) {
-        heater_off();
+        HeaterOFF();
     }
     else if (td.temperature < td.setpoint) {
-        heater_on();
+        HeaterON();
     }
     else {
         /* Nothing */
@@ -407,15 +432,15 @@ void thermo_logic_temp_setpoint()
 }
 //------------------------------------------------------
 
-void during_power_save()
+void DuringPowerSave()
 {
     if (remaining_sleep_cycles == 0) {
-        remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
+        remaining_sleep_cycles = sleep_cycles_config;
         
-        sample_data();
+        SampleData();
         state_current->thermo_logic();
         
-        tx_to_base();
+        TransmitToBase();
     }
     else {
         if ((td.remaining_time_s != TIMER_DISABLED) &&
@@ -430,11 +455,11 @@ void during_power_save()
         if (remaining_sleep_cycles != 0)
             remaining_sleep_cycles--;
 
-        go_to_sleep();
+        GoToSleep();
     }
 }
 
-void during_power_on()
+void DuringPowerON()
 {
     static long long timer_1s = millis() + 1000;
     
@@ -450,24 +475,24 @@ void during_power_on()
             td.remaining_time_s--;
     }
 
-    read_and_debounce_pushbutton();
+    ReadAndDebouncePushbutton();
 
     if (millis() > timer_to_sleep) {
         /* encapsular a una funcio */
         state_current->thermo_logic();
-        tx_to_base();
-        remaining_sleep_cycles = CYCLES_OF_SLEEP_S;
+        TransmitToBase();
+        remaining_sleep_cycles = sleep_cycles_config;
         td.power_mode = POWER_SAVE;
     }
 }
 
-void set_thermo_state(t_state_functions *new_state)
+void SetThermoState(StateFunctions *new_state)
 {
     state_current = new_state;
     td.remaining_time_s = TIMER_DISABLED;
 }
 
-void get_time_formatted(char *in_buff)
+void GetTimeFormatted(char *in_buff)
 {
     uint8_t hours = 0;
     uint8_t minutes = 0;
@@ -482,7 +507,7 @@ void get_time_formatted(char *in_buff)
     }
 }
 
-void oled_update_time_to_off()
+void OledUpdateTimeToOff()
 {
     char buff[17];
     
@@ -492,7 +517,7 @@ void oled_update_time_to_off()
     oled.println("Encendre");
     oled.println("durant");
 
-    get_time_formatted(buff);
+    GetTimeFormatted(buff);
     oled.clearToEOL();
     oled.println(buff);
     sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
@@ -500,7 +525,7 @@ void oled_update_time_to_off()
     oled.println(buff);
 }
 
-void oled_update_time_to_on()
+void OledUpdateTimeToOn()
 {
     char buff[17];
     
@@ -510,7 +535,7 @@ void oled_update_time_to_on()
     oled.println("Encendre");
     oled.println("en");
 
-    get_time_formatted(buff);
+    GetTimeFormatted(buff);
     oled.clearToEOL();
     oled.println(buff);
     sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
@@ -518,7 +543,7 @@ void oled_update_time_to_on()
     oled.println(buff);
 }
 
-void oled_update_temp_setpoint()
+void OledUpdateTempSetpoint()
 {
     char buff[17];
     
@@ -535,13 +560,13 @@ void oled_update_temp_setpoint()
     oled.println(buff);
 }
 
-void sample_data()
+void SampleData()
 {
-    read_temp_data();
-    td.vbat_mv = read_vbat_mv();
+    ReadTempData();
+    td.vbat_mv = ReadVbatMv();
 }
 
-void tx_to_base()
+void TransmitToBase()
 {
     uint8_t tx_buff[TX_BUFF_LEN];
     
@@ -573,18 +598,20 @@ void tx_to_base()
     radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
 }
 
-void go_to_sleep()
+void GoToSleep()
 {
-    flash_sleep();
+    FlashSleep();
     radio.sleep();
-    wake_up_cause = CYCLIC;
-
+    
     DISABLE_OLED_VCC;
+    DISABLE_RTC_VCC;
     pinMode(OLED_VCC, OUTPUT);
-    pinMode(BUTTON_IN, INPUT_PULLUP);
+    pinMode(BUTTON_CTRL, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
 
-    attachInterrupt(digitalPinToInterrupt(BUTTON_IN), rsi_red, LOW);
+    wake_up_cause = CYCLIC;
+
+    attachInterrupt(digitalPinToInterrupt(BUTTON_CTRL), RsiButtonCtrl, LOW);
     // Enter power down state with ADC and BOD module disabled.
     // Wake up when wake up pin is low.
     LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
@@ -592,22 +619,23 @@ void go_to_sleep()
     /* ZZzzZZzzZZzz */
 
     // Disable external pin interrupt on wake up pin.
-    detachInterrupt(digitalPinToInterrupt(BUTTON_IN));
+    detachInterrupt(digitalPinToInterrupt(BUTTON_CTRL));
 
     if (wake_up_cause == INT_EXT) {
         DEBUGLN("INT_EXT");
         
-        timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+        ResetTimerToSleep();
         td.power_mode = POWER_ON;
         
-        init_oled();
-        state_current->oled_update();
+        InitOled();
+        InitRTC();
+        FlashWakeup();
         
-        flash_wakeup();
+        state_current->oled_update();
     }
 }
 
-static uint16_t read_vbat_mv()
+uint16_t ReadVbatMv()
 {
     analogReference(INTERNAL); // Referencia interna de 1.1V
 
@@ -625,7 +653,7 @@ static uint16_t read_vbat_mv()
     return (uint16_t) vbat;
 }
 
-static void read_temp_data()
+void ReadTempData()
 {
     int safeguard_loop = 20;
 
@@ -637,30 +665,32 @@ static void read_temp_data()
     td.humidity = DHT.humidity * 10;
 }
 
-static void do_relay_pulse()
-{
-    pinMode(RELAY_PLUS, OUTPUT);
-    delay(50);
-
-    digitalWrite(RELAY_PLUS, LOW);
-    delay(250);
-    digitalWrite(RELAY_PLUS, HIGH);
-
-    pinMode(RELAY_PLUS, INPUT_PULLUP);
-}
-
 /*
- * This function needs to be called very often.
- * It implements a FSM IDLE -> DEBOUNCE -> CONFIRM to read a switch value
+ * This function needs to be called often (once per tick)
+ * It implements a FSM IDLE -> DEBOUNCE -> CONFIRM to read a button value
  */
-static void read_and_debounce_pushbutton()
+void ReadAndDebouncePushbutton()
 {
-    static t_push_button_state pb_state = PB_IDLE;
+    static PushButtonState pb_state = PB_IDLE;
+    static int pressed_button = 0;  /* 0 means NONE */
     static unsigned long tick_time = 0;
 
     switch (pb_state) {
     case PB_IDLE:
-        if (digitalRead(BUTTON_IN) == PB_PRESSED) {
+        if (digitalRead(BUTTON_CTRL) == PB_PRESSED) {
+            pressed_button = BUTTON_CTRL;
+        }
+        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
+            pressed_button = BUTTON_UP;
+        }
+        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
+            pressed_button = BUTTON_DOWN;
+        }
+        else {
+            pressed_button = 0;
+        }
+    
+        if (pressed_button != 0) {
             pb_state = PB_DEBOUCE;
             tick_time = millis();
         }
@@ -670,7 +700,8 @@ static void read_and_debounce_pushbutton()
         break;
 
     case PB_DEBOUCE:
-        if (digitalRead(BUTTON_IN) == PB_RELEASED) {
+        if (digitalRead(pressed_button) == PB_RELEASED) {
+            /* Read the delta since PB was pressed. From higher to lower value */
             if ((millis() - tick_time) > VERYLONG_CLICK_TIME_MS) {
                 pb_state = PB_VERYLONG_CLICK_CONFIRMED;
             }
@@ -681,11 +712,12 @@ static void read_and_debounce_pushbutton()
                 pb_state = PB_SHORT_CLICK_CONFIRMED;
             }
             else {
+                /* Return to Idle if pulse was too short */
                 pb_state = PB_IDLE;
             }
         }
         else {
-            /* Keep the current state */
+            /* Keep waiting button release */
         }
         break;
 
@@ -693,21 +725,24 @@ static void read_and_debounce_pushbutton()
     case PB_LONG_CLICK_CONFIRMED:
     case PB_VERYLONG_CLICK_CONFIRMED:
         /* Reset sleep timer because button is pressed */
-        timer_to_sleep = millis() + TIMEOUT_TO_SLEEP_MS;
+        ResetTimerToSleep();
+        
+        /* Maybe check what button was pressed?
+         * There may be special buttons that are not tied to a state. */
 
-        if (digitalRead(BUTTON_IN) == PB_RELEASED) {
-            state_current->click_callback(pb_state);
-            state_current->oled_update();
-            pb_state = PB_IDLE;
-        }
-        else {
-            /* Keep the current state */
-        }
+        state_current->click_callback(pb_state);
+        state_current->oled_update();
+        pb_state = PB_IDLE;
         break;
     }
 }
 
-void init_radio()
+void ResetTimerToSleep()
+{
+    timer_to_sleep = millis() + timeout_to_sleep_config;
+}
+
+void InitRadio()
 {
 #ifdef WITH_RFM69
     radio.initialize(FREQUENCY, NODEID, NETWORKID);
@@ -717,7 +752,7 @@ void init_radio()
 #endif
 }
 
-void init_flash()
+void InitFlash()
 {
 #ifdef WITH_SPIFLASH
     if (flash.initialize()) {
@@ -726,7 +761,7 @@ void init_flash()
 #endif
 }
 
-void flash_sleep()
+void FlashSleep()
 {
 #ifdef WITH_SPIFLASH
     if(flash_is_awake == false)
@@ -737,7 +772,7 @@ void flash_sleep()
 #endif
 }
 
-void flash_wakeup()
+void FlashWakeup()
 {
 #ifdef WITH_SPIFLASH
     if(flash_is_awake == true)
@@ -748,14 +783,35 @@ void flash_wakeup()
 #endif
 }
 
-void init_oled()
+void InitOled()
 {
 #ifdef WITH_OLED
     ENABLE_OLED_VCC;
     delay(500);
 
-    oled.begin(&Adafruit128x64, I2C_ADDRESS);
+    oled.begin(&Adafruit128x64, OLED_I2C_ADDR);
     oled.setFont(Stang5x7);
     oled.clear();
 #endif
+}
+
+void InitRTC()
+{
+    /* PRE: Wire.begin() need to be run somewhere before */
+    ENABLE_RTC_VCC;
+    delay(25);
+    
+    /* rtc.begin(); not necessary because it only runs Wire.begin() */
+    
+    if (false == rtc.initialized()) {
+        DEBUGLN("RTC was NOT running. Setting current time.");
+        // following line sets the RTC to the date & time this sketch was compiled
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
+    else {
+        /* Nothing */
+    }
+    
+    uint32_t unixtime = rtc.unixtime(); // should just work
+    DEBUG("Unixtime: "); DEBUGLN(unixtime);
 }
