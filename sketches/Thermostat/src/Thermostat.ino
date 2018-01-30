@@ -803,7 +803,7 @@ void InitRTC()
     
     /* rtc.begin(); not necessary because it only runs Wire.begin() */
     
-    if (false == rtc.initialized()) {
+    if (false == rtc.isrunning()) {
         DEBUGLN("RTC was NOT running. Setting current time.");
         // following line sets the RTC to the date & time this sketch was compiled
         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -812,6 +812,6 @@ void InitRTC()
         /* Nothing */
     }
     
-    uint32_t unixtime = rtc.unixtime(); // should just work
+    uint32_t unixtime = rtc.now().unixtime(); // should just work
     DEBUG("Unixtime: "); DEBUGLN(unixtime);
 }
