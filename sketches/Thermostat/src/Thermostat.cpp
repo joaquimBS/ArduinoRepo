@@ -250,7 +250,7 @@ ThermoStateFunctions *state_current = &thermo_state_time_to_off;
 ThermoStateFunctions *state_current_saved = NULL_PTR;
 
 long timer_to_sleep = 0;
-uint8_t remaining_sleep_cycles = 0;
+uint16_t remaining_sleep_cycles = 0;
 
 /* Thermostat configuration (maybe a struct) */
 uint16_t on_after_time_to_on_config = DEFAULT_ON_AFTER_TIME_TO_ON_S;
