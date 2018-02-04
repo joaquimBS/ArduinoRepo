@@ -70,21 +70,35 @@ RTC_DS1307 rtc;
 #define TIMER_DISABLED ((uint16_t)-1)
 
 #ifdef USE_DEBUG
-#define DEFAULT_TIMEOUT_TO_SLEEP_MS ((unsigned int)3000)
-#define TIME_INCREMENT1_S ((unsigned int)10)
-#define TIME_INCREMENT2_S ((unsigned int)10)
-#define TIME_TO_OFF_MAX_S ((unsigned int)90)
-#define TIME_TO_ON_MAX_S ((unsigned int)90)
+#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10000)
+#define TIME_INCREMENT_1800_S ((unsigned int)10)
+#define TIME_INCREMENT_900_S ((unsigned int)10)
+#define MAX_TIME_TO_OFF_S ((unsigned int)90)
+#define MAX_TIME_TO_ON_S ((unsigned int)90)
 #define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)5)
+#define ON_AFTER_TIME_TO_ON_MAX_S ((unsigned int)5)
 #define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
-#define DEFAULT_TIMEOUT_TO_SLEEP_MS ((unsigned int)10000)
-#define TIME_INCREMENT1_S ((unsigned int)1801)
-#define TIME_INCREMENT2_S ((unsigned int)901)
-#define TIME_TO_OFF_MAX_S ((unsigned int)4*3601)
-#define TIME_TO_ON_MAX_S ((unsigned int)12*3601)
+#define TIME_INCREMENT_1800_S ((unsigned int)1801)
+#define TIME_INCREMENT_900_S ((unsigned int)901)
+#define TIME_INCREMENT_15_S ((unsigned int)15)
+#define TIME_INCREMENT_5_S ((unsigned int)5)
+
+#define MAX_TIME_TO_OFF_S ((unsigned int)4*3601)
+#define MAX_TIME_TO_ON_S ((unsigned int)12*3601)
+
 #define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)3600)
+#define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)1800)
+#define MAX_ON_AFTER_TIME_TO_ON_S ((unsigned int)3*3600)
+
+
+#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
+#define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
+#define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
+
 #define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
+#define MIN_CYCLES_OF_SLEEP_S ((unsigned int)15)
+#define MAX_CYCLES_OF_SLEEP_S ((unsigned int)10*60)
 #endif
 
 #define TEMP_HYSTHERESIS_RANGE 10   // remember 0.1C resolution
@@ -149,7 +163,7 @@ typedef struct
     VoidCallback thermo_logic;
     VoidCallback oled_update;
     ClickCallback click_callback;
-} StateFunctions;
+} ThermoStateFunctions;
 
 /*-------------------------- Routine Prototypes ------------------------------*/
 void RsiButtonCtrl();
@@ -170,8 +184,9 @@ void ReadAndDebouncePushbutton();
 void ResetTimerToSleep();
 void HeaterOFF();
 void HeaterON();
-void SetThermoState(StateFunctions *new_state);
-void GetTimeFormatted(char *in_buff);
+void SetThermoState(ThermoStateFunctions *new_state);
+void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_r);
+void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_r);
 
 void DuringPowerON();
 void DuringPowerSave();
@@ -188,34 +203,59 @@ void ThermoLogicTempSetpoint();
 void OledUpdateTempSetpoint();
 void ClickTempSetpoint(PushButtonState);
 
+void OledUpdateTimeOnAfterTimeToOn();
+void ClickTimeOnAfterTimeToOn(PushButtonState click_type);
+
+void OledUpdateSleepTime();
+void ClickSleepTime(PushButtonState click_type);
+
+void OledUpdateTimeoutToSleep();
+void ClickTimoutToSleep(PushButtonState click_type);
+
 /* ---------------------------- Global Variables ---------------------------- */
 ThermostatData td = {0};
 volatile WakeUpCause wake_up_cause = CYCLIC;
 
-StateFunctions state_time_to_off{
+ThermoStateFunctions thermo_state_time_to_off{
     ThermoLogicTimeToOff,
     OledUpdateTimeToOff,
     ClickTimeToOff};
 
-StateFunctions state_time_to_on{
+ThermoStateFunctions thermo_state_time_to_on{
     ThermoLogicTimeToOn,
     OledUpdateTimeToOn,
     ClickTimeToOn};
 
-StateFunctions state_temp_setpoint{
+ThermoStateFunctions thermo_state_temp_setpoint{
     ThermoLogicTempSetpoint,
     OledUpdateTempSetpoint,
     ClickTempSetpoint};
 
-StateFunctions *state_current = &state_time_to_off;
+ThermoStateFunctions config_state_on_after_time_to_on{
+    NULL_PTR,
+    OledUpdateTimeOnAfterTimeToOn,
+    ClickTimeOnAfterTimeToOn};
+
+ThermoStateFunctions config_state_sleep_time_s{
+    NULL_PTR,
+    OledUpdateSleepTime,
+    ClickSleepTime};
+
+ThermoStateFunctions config_state_timeout_to_sleep{
+    NULL_PTR,
+    OledUpdateTimeoutToSleep,
+    ClickTimoutToSleep};
+
+ThermoStateFunctions *state_current = &thermo_state_time_to_off;
+ThermoStateFunctions *state_current_saved = NULL_PTR;
 
 long timer_to_sleep = 0;
 uint8_t remaining_sleep_cycles = 0;
 
 /* Thermostat configuration (maybe a struct) */
-uint16_t sleep_cycles_config = DEFAULT_CYCLES_OF_SLEEP_S;
-uint16_t timeout_to_sleep_config = DEFAULT_TIMEOUT_TO_SLEEP_MS;
 uint16_t on_after_time_to_on_config = DEFAULT_ON_AFTER_TIME_TO_ON_S;
+uint16_t sleep_cycles_config = DEFAULT_CYCLES_OF_SLEEP_S;
+uint16_t timeout_to_sleep_config = DEFAULT_TIMEOUT_TO_SLEEP_S;
 // ========================== End of Header ================================= //
 
 /* -------------------------------- Routines -------------------------------- */
@@ -252,7 +292,7 @@ void setup()
     InitRadio();
     InitFlash();
     InitOled();
-    InitRTC();
+//    InitRTC();
     
     LED_OFF;
 
@@ -262,8 +302,10 @@ void setup()
     // Set initial values to some variables
     td.setpoint = (int)(td.temperature/10)*10;
     td.remaining_time_s = TIMER_DISABLED;
-    SetThermoState(&state_time_to_off);
+    SetThermoState(&thermo_state_temp_setpoint);
     state_current->oled_update();
+    
+    ResetTimerToSleep();
     
     HeaterOFF();
 }
@@ -281,14 +323,14 @@ void loop()
 void ClickTimeToOff(PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.remaining_time_s += TIME_INCREMENT1_S;
-        if (td.remaining_time_s > TIME_TO_OFF_MAX_S) {
+        td.remaining_time_s += TIME_INCREMENT_1800_S;
+        if (td.remaining_time_s > MAX_TIME_TO_OFF_S) {
             td.remaining_time_s = TIMER_DISABLED;
         }
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         oled.clear();
-        SetThermoState(&state_time_to_on);
+        SetThermoState(&thermo_state_time_to_on);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -301,14 +343,14 @@ void ClickTimeToOff(PushButtonState click_type)
 void ClickTimeToOn(PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.remaining_time_s += TIME_INCREMENT2_S;
-        if (td.remaining_time_s > TIME_TO_ON_MAX_S) {
+        td.remaining_time_s += TIME_INCREMENT_900_S;
+        if (td.remaining_time_s > MAX_TIME_TO_ON_S) {
             td.remaining_time_s = TIMER_DISABLED;
         }
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         oled.clear();
-        SetThermoState(&state_temp_setpoint);
+        SetThermoState(&thermo_state_temp_setpoint);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -340,7 +382,7 @@ void ClickTempSetpoint(PushButtonState click_type)
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
         oled.clear();
-        SetThermoState(&state_time_to_off);
+        SetThermoState(&thermo_state_time_to_off);
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -349,6 +391,62 @@ void ClickTempSetpoint(PushButtonState click_type)
         /* Nothing */
     }
 }
+
+void ClickTimeOnAfterTimeToOn(PushButtonState click_type)
+{
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+        on_after_time_to_on_config += TIME_INCREMENT_900_S;
+        if (on_after_time_to_on_config > MAX_ON_AFTER_TIME_TO_ON_S) {
+            on_after_time_to_on_config = MIN_ON_AFTER_TIME_TO_ON_S;
+        }
+    }
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        oled.clear();
+        state_current = &config_state_sleep_time_s;
+        /* Nothing */
+    }
+    else {
+        /* Nothing */
+    }
+}
+
+void ClickSleepTime(PushButtonState click_type)
+{
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+        sleep_cycles_config += TIME_INCREMENT_15_S;
+        if (sleep_cycles_config > MAX_CYCLES_OF_SLEEP_S) {
+            sleep_cycles_config = MIN_CYCLES_OF_SLEEP_S;
+        }
+    }
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        oled.clear();
+        state_current = &config_state_timeout_to_sleep;
+        /* Nothing */
+    }
+    else {
+        /* Nothing */
+    }
+}
+
+void ClickTimoutToSleep(PushButtonState click_type)
+{
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+        timeout_to_sleep_config += TIME_INCREMENT_5_S;
+        if (timeout_to_sleep_config > MAX_TIMEOUT_TO_SLEEP_S) {
+            timeout_to_sleep_config = MIN_TIMEOUT_TO_SLEEP_S;
+        }
+        ResetTimerToSleep();
+    }
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        oled.clear();
+        state_current = &config_state_on_after_time_to_on;
+        /* Nothing */
+    }
+    else {
+        /* Nothing */
+    }
+}
+
 
 void HeaterON()
 {
@@ -402,7 +500,7 @@ void ThermoLogicTimeToOn()
         
         /* The following code is used to turn OFF the heater 
          * at some point. If not used, heater would be ON forever! */
-        SetThermoState(&state_time_to_off);
+        SetThermoState(&thermo_state_time_to_off);
         td.remaining_time_s = on_after_time_to_on_config;
     }
     else {
@@ -483,6 +581,15 @@ void DuringPowerON()
 
     if (millis() > timer_to_sleep) {
         /* encapsular a una funcio */
+        
+        if(state_current_saved != NULL_PTR) {
+            state_current = state_current_saved;
+            state_current_saved = NULL_PTR;
+        }
+        else {
+            /* Nothing */
+        }
+        
         state_current->thermo_logic();
         TransmitToBase();
         remaining_sleep_cycles = sleep_cycles_config;
@@ -490,21 +597,38 @@ void DuringPowerON()
     }
 }
 
-void SetThermoState(StateFunctions *new_state)
+void SetThermoState(ThermoStateFunctions *new_state)
 {
     state_current = new_state;
     td.remaining_time_s = TIMER_DISABLED;
 }
 
-void GetTimeFormatted(char *in_buff)
+void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_s)
 {
     uint8_t hours = 0;
     uint8_t minutes = 0;
     
-    if(td.remaining_time_s != TIMER_DISABLED) {
-        hours = td.remaining_time_s / 3600;
-        minutes = (td.remaining_time_s % 3600) / 60;
+    if(time_to_format_s != TIMER_DISABLED) {
+        hours = time_to_format_s / 3600;
+        minutes = (time_to_format_s % 3600) / 60;
         sprintf(in_buff, "%d:%.2d h", hours, minutes);
+    }
+    else {
+        sprintf(in_buff, "APAGAT", hours, minutes);
+    }
+}
+
+void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_s)
+{
+    uint8_t hours = 0;
+    uint8_t minutes = 0;
+    uint8_t seconds = 0;
+    
+    if(time_to_format_s != TIMER_DISABLED) {
+        hours = time_to_format_s / 3600;
+        minutes = (time_to_format_s % 3600) / 60;
+        seconds = (time_to_format_s % 3600) % 60;
+        sprintf(in_buff, "%d:%.2d:%.2d h", hours, minutes, seconds);
     }
     else {
         sprintf(in_buff, "APAGAT", hours, minutes);
@@ -521,7 +645,7 @@ void OledUpdateTimeToOff()
     oled.println("Encendre");
     oled.println("durant");
 
-    GetTimeFormatted(buff);
+    GetTimeFormattedHM(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
     sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
@@ -539,7 +663,7 @@ void OledUpdateTimeToOn()
     oled.println("Encendre");
     oled.println("en");
 
-    GetTimeFormatted(buff);
+    GetTimeFormattedHM(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
     sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
@@ -561,6 +685,51 @@ void OledUpdateTempSetpoint()
     oled.clearToEOL();
     
     sprintf(buff, "Obj.: %s", (td.setpoint==0) ? STOP_STR : String((td.setpoint/10.0),1).c_str());
+    oled.println(buff);
+}
+
+void OledUpdateTimeOnAfterTimeToOn()
+{
+    char buff[17];
+    
+    oled.home();
+    oled.set2X();
+
+    oled.println("ON after");
+    oled.println("TimeToOn:");
+
+    GetTimeFormattedHMS(buff, on_after_time_to_on_config);
+    oled.clearToEOL();
+    oled.println(buff);
+}
+
+void OledUpdateSleepTime()
+{
+    char buff[17];
+    
+    oled.home();
+    oled.set2X();
+
+    oled.println("Sleep");
+    oled.println("time (s):");
+
+    GetTimeFormattedHMS(buff, sleep_cycles_config);
+    oled.clearToEOL();
+    oled.println(buff);
+}
+
+void OledUpdateTimeoutToSleep()
+{
+    char buff[17];
+    
+    oled.home();
+    oled.set2X();
+
+    oled.println("Timeout to");
+    oled.println("sleep:");
+
+    GetTimeFormattedHMS(buff, timeout_to_sleep_config);
+    oled.clearToEOL();
     oled.println(buff);
 }
 
@@ -632,7 +801,7 @@ void GoToSleep()
         td.power_mode = POWER_ON;
         
         InitOled();
-        InitRTC();
+//        InitRTC();
         FlashWakeup();
         
         state_current->oled_update();
@@ -677,19 +846,19 @@ void ReadAndDebouncePushbutton()
 {
     static PushButtonState pb_state = PB_IDLE;
     static int pressed_button = 0;  /* 0 means NONE */
-    static unsigned long tick_time = 0;
+    static long long tick_time = 0;
 
     switch (pb_state) {
     case PB_IDLE:
         if (digitalRead(BUTTON_CTRL) == PB_PRESSED) {
             pressed_button = BUTTON_CTRL;
         }
-        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
-            pressed_button = BUTTON_UP;
-        }
-        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
-            pressed_button = BUTTON_DOWN;
-        }
+//        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
+//            pressed_button = BUTTON_UP;
+//        }
+//        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
+//            pressed_button = BUTTON_DOWN;
+//        }
         else {
             pressed_button = 0;
         }
@@ -721,7 +890,8 @@ void ReadAndDebouncePushbutton()
             }
         }
         else {
-            /* Keep waiting button release */
+            /* Keep waiting button release, resetting timer to sleep */
+            ResetTimerToSleep();
         }
         break;
 
@@ -731,10 +901,17 @@ void ReadAndDebouncePushbutton()
         /* Reset sleep timer because button is pressed */
         ResetTimerToSleep();
         
-        /* Maybe check what button was pressed?
-         * There may be special buttons that are not tied to a state. */
-
-        state_current->click_callback(pb_state);
+        /* Switch FSM: Thermo -> Config */
+        if(pb_state == PB_VERYLONG_CLICK_CONFIRMED) {
+            oled.clear();
+            state_current_saved = state_current;
+            state_current = &config_state_on_after_time_to_on;
+        }
+        else {
+            /* If its click or long click, pass it to the state */
+            state_current->click_callback(pb_state);
+        }
+        
         state_current->oled_update();
         pb_state = PB_IDLE;
         break;
@@ -743,7 +920,7 @@ void ReadAndDebouncePushbutton()
 
 void ResetTimerToSleep()
 {
-    timer_to_sleep = millis() + timeout_to_sleep_config;
+    timer_to_sleep = millis() + (timeout_to_sleep_config * 1000);
 }
 
 void InitRadio()

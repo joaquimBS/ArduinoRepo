@@ -46,6 +46,8 @@ enum {
     DIGITAL_PIN_COUNT
 };
 
+#define NULL_PTR (void*)0
+
 #define LED_ON      digitalWrite(INFO_LED, HIGH)
 #define LED_OFF     digitalWrite(INFO_LED, LOW)
 
