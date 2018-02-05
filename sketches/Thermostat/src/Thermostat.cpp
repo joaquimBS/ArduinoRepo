@@ -7,9 +7,9 @@
 #include "Thermostat.h"
 
 // #include "MemoryFree.h"
-#include "dht.h"
-#include "LowPower.h"      // https://github.com/rocketscream/Low-Power
-#include "RTClib.h"        // https://github.com/adafruit/RTClib/tree/1.2.0
+#include "dht.h"        // https://github.com/RobTillaart/Arduino/archive/master.zip
+#include "LowPower.h"   // https://github.com/adafruit/RTClib/archive/1.2.0.zip
+#include "RTClib.h"     // https://github.com/adafruit/RTClib/tree/1.2.0
 
 /*-------------------------------- Defines -----------------------------------*/
 #define WITH_RFM69
@@ -29,9 +29,9 @@ SSD1306AsciiAvrI2c oled;
 #endif
 
 #if defined(WITH_RFM69)
-#include <RFM69.h>         // https://github.com/lowpowerlab/RFM69
+#include "RFM69.h"         // https://github.com/lowpowerlab/RFM69
 //#include <RFM69_ATC.h>     // https://github.com/lowpowerlab/RFM69
-#include <RFM69_OTA.h>     // https://github.com/lowpowerlab/RFM69
+#include "RFM69_OTA.h"     // https://github.com/lowpowerlab/RFM69
 RFM69 radio;
 #define GATEWAYID 1
 #define NETWORKID 100
@@ -48,6 +48,7 @@ RFM69 radio;
 //                             0xEF30 for windbond 4mbit flash
 //                             0xEF40 for windbond 16/64mbit flash
 //******************************************************************************
+#include "SPIFlash.h"   // https://github.com/LowPowerLab/SPIFlash/archive/master.zip
 SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for windbond 4mbit flash
 boolean flash_is_awake = false;
 #endif
@@ -222,16 +223,16 @@ void OledUpdateTempSetpoint();
 void ClickTempSetpoint(PushButtonState);
 
 void OledUpdateTimeOnAfterTimeToOn();
-void ClickTimeOnAfterTimeToOn(PushButtonState click_type);
+void ClickTimeOnAfterTimeToOn(PushButtonState);
 
 void OledUpdateSleepTime();
-void ClickSleepTime(PushButtonState click_type);
+void ClickSleepTime(PushButtonState);
 
 void OledUpdateTimeoutToSleep();
-void ClickTimoutToSleep(PushButtonState click_type);
+void ClickTimoutToSleep(PushButtonState);
 
 /* ---------------------------- Global Variables ---------------------------- */
-ThermostatData td = {0};
+ThermostatData td = {HEATER_OFF, MODE_TIME, POWER_ON, 0, 0, 0, 0, 0};
 volatile WakeUpCause wake_up_cause = CYCLIC;
 
 ThermoStateFunctions thermo_state_time_to_off{
@@ -265,9 +266,9 @@ ThermoStateFunctions config_state_timeout_to_sleep{
     ClickTimoutToSleep};
 
 ThermoStateFunctions *state_current = &thermo_state_time_to_off;
-ThermoStateFunctions *state_current_saved = NULL_PTR;
+ThermoStateFunctions *state_current_saved = (ThermoStateFunctions*)NULL_PTR;
 
-long timer_to_sleep = 0;
+long long timer_to_sleep = 0;
 uint16_t remaining_sleep_cycles = 0;
 
 /* Thermostat configuration (maybe a struct) */
@@ -478,7 +479,6 @@ void ClickTimoutToSleep(PushButtonState click_type)
     }
 }
 
-
 void HeaterON()
 {
     td.heater_status = HEATER_ON;
@@ -618,7 +618,7 @@ void DuringPowerON()
         
         if(state_current_saved != NULL_PTR) {
             state_current = state_current_saved;
-            state_current_saved = NULL_PTR;
+            state_current_saved = (ThermoStateFunctions*)NULL_PTR;
         }
         else {
             /* Nothing */
@@ -648,7 +648,7 @@ void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_s)
         sprintf(in_buff, "%d:%.2d h", hours, minutes);
     }
     else {
-        sprintf(in_buff, "APAGAT", hours, minutes);
+        sprintf(in_buff, "APAGAT");
     }
 }
 
@@ -665,7 +665,7 @@ void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_s)
         sprintf(in_buff, "%d:%.2d:%.2d h", hours, minutes, seconds);
     }
     else {
-        sprintf(in_buff, "APAGAT", hours, minutes);
+        sprintf(in_buff, "APAGAT");
     }
 }
 
