@@ -5,10 +5,10 @@ OBJS=   \
         src/Thermostat.h
 
 all:
-	$(PIO) run
-	
-upload:
 	$(PIO) run --target upload
+	
+build:
+	$(PIO) run
 
 clean:
 	$(PIO) run --target clean
