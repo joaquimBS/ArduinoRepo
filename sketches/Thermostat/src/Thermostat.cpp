@@ -70,15 +70,6 @@ RTC_DS1307 rtc;
 #define TIMER_DISABLED ((uint16_t)-1)
 
 #ifdef USE_DEBUG
-#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10000)
-#define TIME_INCREMENT_1800_S ((unsigned int)10)
-#define TIME_INCREMENT_900_S ((unsigned int)10)
-#define MAX_TIME_TO_OFF_S ((unsigned int)90)
-#define MAX_TIME_TO_ON_S ((unsigned int)90)
-#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)5)
-#define ON_AFTER_TIME_TO_ON_MAX_S ((unsigned int)5)
-#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
-#else
 #define TIME_INCREMENT_1800_S ((unsigned int)1801)
 #define TIME_INCREMENT_900_S ((unsigned int)901)
 #define TIME_INCREMENT_15_S ((unsigned int)15)
@@ -91,6 +82,33 @@ RTC_DS1307 rtc;
 #define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)1800)
 #define MAX_ON_AFTER_TIME_TO_ON_S ((unsigned int)3*3600)
 
+#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
+#define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
+#define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
+
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
+#define MIN_CYCLES_OF_SLEEP_S ((unsigned int)15)
+#define MAX_CYCLES_OF_SLEEP_S ((unsigned int)10*60)
+//#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10000)
+//#define TIME_INCREMENT_1800_S ((unsigned int)10)
+//#define TIME_INCREMENT_900_S ((unsigned int)10)
+//#define MAX_TIME_TO_OFF_S ((unsigned int)90)
+//#define MAX_TIME_TO_ON_S ((unsigned int)90)
+//#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)5)
+//#define ON_AFTER_TIME_TO_ON_MAX_S ((unsigned int)5)
+//#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
+#else
+#define TIME_INCREMENT_1800_S ((unsigned int)1801)
+#define TIME_INCREMENT_900_S ((unsigned int)901)
+#define TIME_INCREMENT_15_S ((unsigned int)15)
+#define TIME_INCREMENT_5_S ((unsigned int)5)
+
+#define MAX_TIME_TO_OFF_S ((unsigned int)4*3601)
+#define MAX_TIME_TO_ON_S ((unsigned int)12*3601)
+
+#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)3600)
+#define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)1800)
+#define MAX_ON_AFTER_TIME_TO_ON_S ((unsigned int)3*3600)
 
 #define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
 #define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
@@ -270,6 +288,7 @@ void InitIOPins()
 
     // -- Custom IO setup --
     pinMode(OLED_VCC, OUTPUT);
+    pinMode(RTC_VCC, OUTPUT);
     pinMode(BUTTON_CTRL, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_PLUS, OUTPUT);
@@ -291,10 +310,22 @@ void setup()
     
     InitRadio();
     InitFlash();
+        FlashSleep();
     InitOled();
-//    InitRTC();
+    InitRTC();
     
     LED_OFF;
+    
+//    while(1) {
+//        uint32_t unixtime = rtc.now().unixtime(); // should just work
+//        DEBUGLN(unixtime);
+//        
+//        oled.home();
+//        oled.clearToEOL();
+//        oled.println(unixtime);
+//        
+//        delay(1000);
+//    }
 
     // Make an initial data sampling.
     SampleData();
@@ -302,7 +333,7 @@ void setup()
     // Set initial values to some variables
     td.setpoint = (int)(td.temperature/10)*10;
     td.remaining_time_s = TIMER_DISABLED;
-    SetThermoState(&thermo_state_temp_setpoint);
+    SetThermoState(&thermo_state_time_to_off);
     state_current->oled_update();
     
     ResetTimerToSleep();
@@ -571,6 +602,9 @@ void DuringPowerON()
     
     if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
+        
+        uint32_t unixtime = rtc.now().unixtime(); // should just work
+        DEBUGLN(unixtime);
 
         if ((td.remaining_time_s != TIMER_DISABLED) &&
             (td.remaining_time_s > TIME_ZERO))
@@ -645,7 +679,7 @@ void OledUpdateTimeToOff()
     oled.println("Encendre");
     oled.println("durant");
 
-    GetTimeFormattedHM(buff, td.remaining_time_s);
+    GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
     sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
@@ -663,7 +697,7 @@ void OledUpdateTimeToOn()
     oled.println("Encendre");
     oled.println("en");
 
-    GetTimeFormattedHM(buff, td.remaining_time_s);
+    GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
     sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
@@ -778,9 +812,9 @@ void GoToSleep()
     
     DISABLE_OLED_VCC;
     DISABLE_RTC_VCC;
-    pinMode(OLED_VCC, OUTPUT);
-    pinMode(BUTTON_CTRL, INPUT_PULLUP);
-    pinMode(INFO_LED, OUTPUT);
+    
+    digitalWrite(A4, LOW);
+    digitalWrite(A5, LOW);
 
     wake_up_cause = CYCLIC;
 
@@ -800,9 +834,11 @@ void GoToSleep()
         ResetTimerToSleep();
         td.power_mode = POWER_ON;
         
+        Wire.begin();
+        
         InitOled();
-//        InitRTC();
-        FlashWakeup();
+        InitRTC();
+//        FlashWakeup();
         
         state_current->oled_update();
     }
@@ -930,6 +966,8 @@ void InitRadio()
     radio.setHighPower();
     radio.encrypt(ENCRYPTKEY);
     radio.sleep();
+    
+    DEBUGLN("InitRadio OK.");
 #endif
 }
 
@@ -938,6 +976,10 @@ void InitFlash()
 #ifdef WITH_SPIFLASH
     if (flash.initialize()) {
         flash_is_awake = true;
+        DEBUGLN("InitFlash OK.");
+    }
+    else {
+        DEBUGLN("InitFlash ERROR.");
     }
 #endif
 }
@@ -973,6 +1015,8 @@ void InitOled()
     oled.begin(&Adafruit128x64, OLED_I2C_ADDR);
     oled.setFont(Stang5x7);
     oled.clear();
+    
+    DEBUGLN("InitOled OK.");
 #endif
 }
 
@@ -980,9 +1024,11 @@ void InitRTC()
 {
     /* PRE: Wire.begin() need to be run somewhere before */
     ENABLE_RTC_VCC;
-    delay(25);
+    delay(500);
     
-    /* rtc.begin(); not necessary because it only runs Wire.begin() */
+//    rtc.begin(); // not necessary because it only runs Wire.begin()
+    
+    DEBUGLN("InitRTC OK.");
     
     if (false == rtc.isrunning()) {
         DEBUGLN("RTC was NOT running. Setting current time.");
