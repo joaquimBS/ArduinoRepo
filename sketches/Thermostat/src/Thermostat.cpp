@@ -1024,11 +1024,9 @@ void InitRTC()
 {
     /* PRE: Wire.begin() need to be run somewhere before */
     ENABLE_RTC_VCC;
-    delay(500);
+    delay(25);
     
-//    rtc.begin(); // not necessary because it only runs Wire.begin()
-    
-    DEBUGLN("InitRTC OK.");
+    /* rtc.begin(); // not necessary because it only runs Wire.begin() */
     
     if (false == rtc.isrunning()) {
         DEBUGLN("RTC was NOT running. Setting current time.");
@@ -1040,5 +1038,5 @@ void InitRTC()
     }
     
     uint32_t unixtime = rtc.now().unixtime(); // should just work
-    DEBUG("Unixtime: "); DEBUGLN(unixtime);
+    DEBUG("InitRTC OK. Unixtime: "); DEBUGLN(unixtime);
 }
