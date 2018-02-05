@@ -266,7 +266,7 @@ ThermoStateFunctions config_state_timeout_to_sleep{
     ClickTimoutToSleep};
 
 ThermoStateFunctions *state_current = &thermo_state_time_to_off;
-ThermoStateFunctions *state_current_saved = (ThermoStateFunctions*)NULL_PTR;
+ThermoStateFunctions *state_current_saved = (ThermoStateFunctions*) NULL_PTR;
 
 long long timer_to_sleep = 0;
 uint16_t remaining_sleep_cycles = 0;
@@ -305,40 +305,40 @@ void setup()
     InitIOPins();
 
     LED_ON;
-    
+
     /* Peripherals initialization block */
     Wire.begin(); // CAUTION. What could happen if other Wire.begin() is issued?
-    
+
     InitRadio();
     InitFlash();
-        FlashSleep();
+    FlashSleep();
     InitOled();
     InitRTC();
-    
+
     LED_OFF;
-    
-//    while(1) {
-//        uint32_t unixtime = rtc.now().unixtime(); // should just work
-//        DEBUGLN(unixtime);
-//        
-//        oled.home();
-//        oled.clearToEOL();
-//        oled.println(unixtime);
-//        
-//        delay(1000);
-//    }
+
+    //    while(1) {
+    //        uint32_t unixtime = rtc.now().unixtime(); // should just work
+    //        DEBUGLN(unixtime);
+    //        
+    //        oled.home();
+    //        oled.clearToEOL();
+    //        oled.println(unixtime);
+    //        
+    //        delay(1000);
+    //    }
 
     // Make an initial data sampling.
     SampleData();
-    
+
     // Set initial values to some variables
-    td.setpoint = (int)(td.temperature/10)*10;
+    td.setpoint = (int) (td.temperature / 10)*10;
     td.remaining_time_s = TIMER_DISABLED;
     SetThermoState(&thermo_state_time_to_off);
     state_current->oled_update();
-    
+
     ResetTimerToSleep();
-    
+
     HeaterOFF();
 }
 
@@ -395,7 +395,7 @@ void ClickTimeToOn(PushButtonState click_type)
 void ClickTempSetpoint(PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        if(td.setpoint == TEMP_SETPOINT_OFF) {
+        if (td.setpoint == TEMP_SETPOINT_OFF) {
             td.setpoint = TEMP_SETPOINT_MIN;
         }
         else {
@@ -484,13 +484,13 @@ void HeaterON()
     td.heater_status = HEATER_ON;
 
 #ifdef USE_DEBUG
-//    LED_ON;
+    //    LED_ON;
 #endif
     digitalWrite(RELAY_MINUS, LOW);
     digitalWrite(RELAY_PLUS, HIGH);
-    
+
     delay(250);
-    
+
     digitalWrite(RELAY_MINUS, LOW);
     digitalWrite(RELAY_PLUS, LOW);
 }
@@ -498,24 +498,25 @@ void HeaterON()
 void HeaterOFF()
 {
     td.heater_status = HEATER_OFF;
-    
+
 #ifdef USE_DEBUG
-//    LED_OFF;
+    //    LED_OFF;
 #endif
     digitalWrite(RELAY_MINUS, HIGH);
     digitalWrite(RELAY_PLUS, LOW);
-    
+
     delay(250);
-    
+
     digitalWrite(RELAY_MINUS, LOW);
     digitalWrite(RELAY_PLUS, LOW);
 }
 
 //-------------- Thermostat Logic Section --------------
+
 void ThermoLogicTimeToOff()
 {
-    if (td.remaining_time_s == TIMER_DISABLED || 
-       (td.remaining_time_s == TIME_ZERO)) {
+    if (td.remaining_time_s == TIMER_DISABLED ||
+        (td.remaining_time_s == TIME_ZERO)) {
         HeaterOFF();
         td.remaining_time_s = TIMER_DISABLED;
     }
@@ -528,7 +529,7 @@ void ThermoLogicTimeToOn()
 {
     if (td.remaining_time_s == TIME_ZERO) {
         HeaterON();
-        
+
         /* The following code is used to turn OFF the heater 
          * at some point. If not used, heater would be ON forever! */
         SetThermoState(&thermo_state_time_to_off);
@@ -546,8 +547,8 @@ void ThermoLogicTempSetpoint()
 
     /* This is to implement a TEMP_HYSTHERESIS_RANGE hystheresis range. */
     if (td.heater_status == HEATER_ON) {
-        hystheresis_hi += (TEMP_HYSTHERESIS_RANGE/2); // remember 0.1C resolution.
-        hystheresis_lo -= (TEMP_HYSTHERESIS_RANGE/2); // remember 0.1C resolution.
+        hystheresis_hi += (TEMP_HYSTHERESIS_RANGE / 2); // remember 0.1C resolution.
+        hystheresis_lo -= (TEMP_HYSTHERESIS_RANGE / 2); // remember 0.1C resolution.
     }
     else {
         /* Nothing */
@@ -569,17 +570,17 @@ void DuringPowerSave()
 {
     if (remaining_sleep_cycles == 0) {
         remaining_sleep_cycles = sleep_cycles_config;
-        
+
         SampleData();
         state_current->thermo_logic();
-        
+
         TransmitToBase();
     }
     else {
         if ((td.remaining_time_s != TIMER_DISABLED) &&
             (td.remaining_time_s > TIME_ZERO)) {
             td.remaining_time_s--;
-            
+
             if (td.remaining_time_s == TIME_ZERO) {
                 remaining_sleep_cycles = 0;
             }
@@ -595,14 +596,14 @@ void DuringPowerSave()
 void DuringPowerON()
 {
     static long long timer_1s = millis() + 1000;
-    
+
     if (radio.receiveDone()) {
         CheckForWirelessHEX(radio, flash, false);
     }
-    
+
     if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
-        
+
         uint32_t unixtime = rtc.now().unixtime(); // should just work
         DEBUGLN(unixtime);
 
@@ -615,15 +616,15 @@ void DuringPowerON()
 
     if (millis() > timer_to_sleep) {
         /* encapsular a una funcio */
-        
-        if(state_current_saved != NULL_PTR) {
+
+        if (state_current_saved != NULL_PTR) {
             state_current = state_current_saved;
-            state_current_saved = (ThermoStateFunctions*)NULL_PTR;
+            state_current_saved = (ThermoStateFunctions*) NULL_PTR;
         }
         else {
             /* Nothing */
         }
-        
+
         state_current->thermo_logic();
         TransmitToBase();
         remaining_sleep_cycles = sleep_cycles_config;
@@ -641,8 +642,8 @@ void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_s)
 {
     uint8_t hours = 0;
     uint8_t minutes = 0;
-    
-    if(time_to_format_s != TIMER_DISABLED) {
+
+    if (time_to_format_s != TIMER_DISABLED) {
         hours = time_to_format_s / 3600;
         minutes = (time_to_format_s % 3600) / 60;
         sprintf(in_buff, "%d:%.2d h", hours, minutes);
@@ -657,8 +658,8 @@ void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_s)
     uint8_t hours = 0;
     uint8_t minutes = 0;
     uint8_t seconds = 0;
-    
-    if(time_to_format_s != TIMER_DISABLED) {
+
+    if (time_to_format_s != TIMER_DISABLED) {
         hours = time_to_format_s / 3600;
         minutes = (time_to_format_s % 3600) / 60;
         seconds = (time_to_format_s % 3600) % 60;
@@ -672,7 +673,7 @@ void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_s)
 void OledUpdateTimeToOff()
 {
     char buff[17];
-    
+
     oled.home();
     oled.set2X();
 
@@ -682,15 +683,15 @@ void OledUpdateTimeToOff()
     GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
-    sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
-                                 String(td.humidity/10).c_str());
+    sprintf(buff, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
+            String(td.humidity / 10).c_str());
     oled.println(buff);
 }
 
 void OledUpdateTimeToOn()
 {
     char buff[17];
-    
+
     oled.home();
     oled.set2X();
 
@@ -700,32 +701,32 @@ void OledUpdateTimeToOn()
     GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
-    sprintf(buff,"%sC  %s%%", String((td.temperature/10.0),1).c_str(),
-                                 String(td.humidity/10).c_str());
+    sprintf(buff, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
+            String(td.humidity / 10).c_str());
     oled.println(buff);
 }
 
 void OledUpdateTempSetpoint()
 {
     char buff[17];
-    
+
     oled.home();
     oled.set2X();
 
     oled.println("Setpoint");
-    sprintf(buff, "Real: %s", String((td.temperature/10.0),1).c_str());
+    sprintf(buff, "Real: %s", String((td.temperature / 10.0), 1).c_str());
     oled.println(buff);
-    
+
     oled.clearToEOL();
-    
-    sprintf(buff, "Obj.: %s", (td.setpoint==0) ? STOP_STR : String((td.setpoint/10.0),1).c_str());
+
+    sprintf(buff, "Obj.: %s", (td.setpoint == 0) ? STOP_STR : String((td.setpoint / 10.0), 1).c_str());
     oled.println(buff);
 }
 
 void OledUpdateTimeOnAfterTimeToOn()
 {
     char buff[17];
-    
+
     oled.home();
     oled.set2X();
 
@@ -740,7 +741,7 @@ void OledUpdateTimeOnAfterTimeToOn()
 void OledUpdateSleepTime()
 {
     char buff[17];
-    
+
     oled.home();
     oled.set2X();
 
@@ -755,7 +756,7 @@ void OledUpdateSleepTime()
 void OledUpdateTimeoutToSleep()
 {
     char buff[17];
-    
+
     oled.home();
     oled.set2X();
 
@@ -776,9 +777,9 @@ void SampleData()
 void TransmitToBase()
 {
     uint8_t tx_buff[TX_BUFF_LEN];
-    
+
 #ifdef USE_DEBUG
-    char buff[16];    
+    char buff[16];
     sprintf(buff, "%d:%d:%d:%d", td.heater_status, td.temperature, td.humidity, td.vbat_mv);
     DEBUGLN(buff);
 #endif
@@ -795,9 +796,9 @@ void TransmitToBase()
     tx_buff[6] = td.vbat_mv & 0x00FF;
     tx_buff[7] = (td.vbat_mv >> 8);
 
-    tx_buff[8] = (uint8_t)td.mode;
-    tx_buff[9] = (uint8_t)td.heater_status;
-    
+    tx_buff[8] = (uint8_t) td.mode;
+    tx_buff[9] = (uint8_t) td.heater_status;
+
     tx_buff[10] = td.remaining_time_s & 0x00FF;
     tx_buff[11] = (td.remaining_time_s >> 8);
 
@@ -809,10 +810,10 @@ void GoToSleep()
 {
     FlashSleep();
     radio.sleep();
-    
+
     DISABLE_OLED_VCC;
     DISABLE_RTC_VCC;
-    
+
     digitalWrite(A4, LOW);
     digitalWrite(A5, LOW);
 
@@ -830,16 +831,16 @@ void GoToSleep()
 
     if (wake_up_cause == INT_EXT) {
         DEBUGLN("INT_EXT");
-        
+
         ResetTimerToSleep();
         td.power_mode = POWER_ON;
-        
+
         Wire.begin();
-        
+
         InitOled();
         InitRTC();
-//        FlashWakeup();
-        
+        //        FlashWakeup();
+
         state_current->oled_update();
     }
 }
@@ -881,7 +882,7 @@ void ReadTempData()
 void ReadAndDebouncePushbutton()
 {
     static PushButtonState pb_state = PB_IDLE;
-    static int pressed_button = 0;  /* 0 means NONE */
+    static int pressed_button = 0; /* 0 means NONE */
     static long long tick_time = 0;
 
     switch (pb_state) {
@@ -889,16 +890,16 @@ void ReadAndDebouncePushbutton()
         if (digitalRead(BUTTON_CTRL) == PB_PRESSED) {
             pressed_button = BUTTON_CTRL;
         }
-//        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
-//            pressed_button = BUTTON_UP;
-//        }
-//        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
-//            pressed_button = BUTTON_DOWN;
-//        }
+            //        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
+            //            pressed_button = BUTTON_UP;
+            //        }
+            //        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
+            //            pressed_button = BUTTON_DOWN;
+            //        }
         else {
             pressed_button = 0;
         }
-    
+
         if (pressed_button != 0) {
             pb_state = PB_DEBOUCE;
             tick_time = millis();
@@ -936,9 +937,9 @@ void ReadAndDebouncePushbutton()
     case PB_VERYLONG_CLICK_CONFIRMED:
         /* Reset sleep timer because button is pressed */
         ResetTimerToSleep();
-        
+
         /* Switch FSM: Thermo -> Config */
-        if(pb_state == PB_VERYLONG_CLICK_CONFIRMED) {
+        if (pb_state == PB_VERYLONG_CLICK_CONFIRMED) {
             oled.clear();
             state_current_saved = state_current;
             state_current = &config_state_on_after_time_to_on;
@@ -947,7 +948,7 @@ void ReadAndDebouncePushbutton()
             /* If its click or long click, pass it to the state */
             state_current->click_callback(pb_state);
         }
-        
+
         state_current->oled_update();
         pb_state = PB_IDLE;
         break;
@@ -966,7 +967,7 @@ void InitRadio()
     radio.setHighPower();
     radio.encrypt(ENCRYPTKEY);
     radio.sleep();
-    
+
     DEBUGLN("InitRadio OK.");
 #endif
 }
@@ -987,9 +988,9 @@ void InitFlash()
 void FlashSleep()
 {
 #ifdef WITH_SPIFLASH
-    if(flash_is_awake == false)
+    if (flash_is_awake == false)
         return;
-    
+
     flash.sleep();
     flash_is_awake = false;
 #endif
@@ -998,9 +999,9 @@ void FlashSleep()
 void FlashWakeup()
 {
 #ifdef WITH_SPIFLASH
-    if(flash_is_awake == true)
+    if (flash_is_awake == true)
         return;
-    
+
     flash.wakeup();
     flash_is_awake = true;
 #endif
@@ -1015,7 +1016,7 @@ void InitOled()
     oled.begin(&Adafruit128x64, OLED_I2C_ADDR);
     oled.setFont(Stang5x7);
     oled.clear();
-    
+
     DEBUGLN("InitOled OK.");
 #endif
 }
@@ -1025,9 +1026,9 @@ void InitRTC()
     /* PRE: Wire.begin() need to be run somewhere before */
     ENABLE_RTC_VCC;
     delay(25);
-    
+
     /* rtc.begin(); // not necessary because it only runs Wire.begin() */
-    
+
     if (false == rtc.isrunning()) {
         DEBUGLN("RTC was NOT running. Setting current time.");
         // following line sets the RTC to the date & time this sketch was compiled
@@ -1036,7 +1037,8 @@ void InitRTC()
     else {
         /* Nothing */
     }
-    
+
     uint32_t unixtime = rtc.now().unixtime(); // should just work
-    DEBUG("InitRTC OK. Unixtime: "); DEBUGLN(unixtime);
+    DEBUG("InitRTC OK. Unixtime: ");
+    DEBUGLN(unixtime);
 }
