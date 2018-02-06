@@ -120,7 +120,7 @@ RTC_DS1307 rtc;
 #define MAX_CYCLES_OF_SLEEP_S ((unsigned int)10*60)
 #endif
 
-#define TEMP_HYSTHERESIS_RANGE 10   // remember 0.1C resolution
+#define TEMP_HYSTERESIS_RANGE 10   // remember 0.1C resolution
 #define TEMP_SETPOINT_INC 5
 #define TEMP_SETPOINT_MAX 220
 #define TEMP_SETPOINT_MIN 150
@@ -542,22 +542,17 @@ void ThermoLogicTimeToOn()
 
 void ThermoLogicTempSetpoint()
 {
-    uint16_t hystheresis_hi = td.setpoint;
-    uint16_t hystheresis_lo = td.setpoint;
+    uint16_t hysteresis_hi = td.setpoint;
+    uint16_t hysteresis_lo = td.setpoint;
 
-    /* This is to implement a TEMP_HYSTHERESIS_RANGE hystheresis range. */
-    if (td.heater_status == HEATER_ON) {
-        hystheresis_hi += (TEMP_HYSTHERESIS_RANGE / 2); // remember 0.1C resolution.
-        hystheresis_lo -= (TEMP_HYSTHERESIS_RANGE / 2); // remember 0.1C resolution.
-    }
-    else {
-        /* Nothing */
-    }
+    /* This is to implement a TEMP_HYSTERESIS_RANGE hysteresis range. */
+    hysteresis_hi += (TEMP_HYSTERESIS_RANGE / 2); // remember 0.1C resolution.
+    hysteresis_lo -= (TEMP_HYSTERESIS_RANGE / 2); // remember 0.1C resolution.
 
-    if (td.temperature >= hystheresis_hi) {
+    if (td.temperature >= hysteresis_hi) {
         HeaterOFF();
     }
-    else if (td.temperature < hystheresis_lo) {
+    else if (td.temperature < hysteresis_lo) {
         HeaterON();
     }
     else {
