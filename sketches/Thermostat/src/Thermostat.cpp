@@ -851,7 +851,7 @@ uint16_t ReadVbatMv()
     }
 
     float vbat = map(adc_vbat, 0, 1023, 0, 1100); // Passem de la lectura 0-1023 de ADC a mV de 0-1100mV
-    vbat *= 11; // 11 és el factor de divisió del divisor.
+    vbat *= 11; // 11 is the division value of the divisor
     vbat = vbat + MAGIC_VBAT_OFFSET_MV;
 
     return (uint16_t) vbat;
