@@ -127,6 +127,7 @@ RTC_DS1307 rtc;
 #define TEMP_SETPOINT_OFF 0
 
 #define STOP_STR ((const char*)"STOP")
+#define OLED_LINE_SIZE_MAX 16
 
 /*------------------------------ Data Types ---------------------------------*/
 typedef enum
@@ -204,8 +205,8 @@ void ResetTimerToSleep();
 void HeaterOFF();
 void HeaterON();
 void SetThermoState(ThermoStateFunctions *new_state);
-void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_r);
-void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_r);
+void GetTimeFormattedHM(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_r);
+void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_r);
 
 void DuringPowerON();
 void DuringPowerSave();
@@ -311,7 +312,6 @@ void setup()
 
     InitRadio();
     InitFlash();
-    FlashSleep();
     InitOled();
     InitRTC();
 
@@ -599,8 +599,7 @@ void DuringPowerON()
     if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
 
-        uint32_t unixtime = rtc.now().unixtime(); // should just work
-        DEBUGLN(unixtime);
+        DEBUGLN(rtc.now().unixtime());
 
         if ((td.remaining_time_s != TIMER_DISABLED) &&
             (td.remaining_time_s > TIME_ZERO))
@@ -633,7 +632,7 @@ void SetThermoState(ThermoStateFunctions *new_state)
     td.remaining_time_s = TIMER_DISABLED;
 }
 
-void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_s)
+void GetTimeFormattedHM(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_s)
 {
     uint8_t hours = 0;
     uint8_t minutes = 0;
@@ -641,14 +640,14 @@ void GetTimeFormattedHM(char *in_buff, uint16_t time_to_format_s)
     if (time_to_format_s != TIMER_DISABLED) {
         hours = time_to_format_s / 3600;
         minutes = (time_to_format_s % 3600) / 60;
-        sprintf(in_buff, "%d:%.2d h", hours, minutes);
+        snprintf(in_buff, OLED_LINE_SIZE_MAX, "%d:%.2d h", hours, minutes);
     }
     else {
-        sprintf(in_buff, "APAGAT");
+        snprintf(in_buff, OLED_LINE_SIZE_MAX, "APAGAT");
     }
 }
 
-void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_s)
+void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_s)
 {
     uint8_t hours = 0;
     uint8_t minutes = 0;
@@ -658,16 +657,16 @@ void GetTimeFormattedHMS(char *in_buff, uint16_t time_to_format_s)
         hours = time_to_format_s / 3600;
         minutes = (time_to_format_s % 3600) / 60;
         seconds = (time_to_format_s % 3600) % 60;
-        sprintf(in_buff, "%d:%.2d:%.2d h", hours, minutes, seconds);
+        snprintf(in_buff, OLED_LINE_SIZE_MAX, "%d:%.2d:%.2d h", hours, minutes, seconds);
     }
     else {
-        sprintf(in_buff, "APAGAT");
+        snprintf(in_buff, OLED_LINE_SIZE_MAX, "APAGAT");
     }
 }
 
 void OledUpdateTimeToOff()
 {
-    char buff[17];
+    char buff[OLED_LINE_SIZE_MAX];
 
     oled.home();
     oled.set2X();
@@ -678,14 +677,14 @@ void OledUpdateTimeToOff()
     GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
-    sprintf(buff, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
             String(td.humidity / 10).c_str());
     oled.println(buff);
 }
 
 void OledUpdateTimeToOn()
 {
-    char buff[17];
+    char buff[OLED_LINE_SIZE_MAX];
 
     oled.home();
     oled.set2X();
@@ -696,31 +695,31 @@ void OledUpdateTimeToOn()
     GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
     oled.println(buff);
-    sprintf(buff, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
             String(td.humidity / 10).c_str());
     oled.println(buff);
 }
 
 void OledUpdateTempSetpoint()
 {
-    char buff[17];
+    char buff[OLED_LINE_SIZE_MAX];
 
     oled.home();
     oled.set2X();
 
     oled.println("Setpoint");
-    sprintf(buff, "Real: %s", String((td.temperature / 10.0), 1).c_str());
+    snprintf(buff, OLED_LINE_SIZE_MAX, "Real: %s", String((td.temperature / 10.0), 1).c_str());
     oled.println(buff);
 
     oled.clearToEOL();
 
-    sprintf(buff, "Obj.: %s", (td.setpoint == 0) ? STOP_STR : String((td.setpoint / 10.0), 1).c_str());
+    snprintf(buff, OLED_LINE_SIZE_MAX, "Obj.: %s", (td.setpoint == 0) ? STOP_STR : String((td.setpoint / 10.0), 1).c_str());
     oled.println(buff);
 }
 
 void OledUpdateTimeOnAfterTimeToOn()
 {
-    char buff[17];
+    char buff[OLED_LINE_SIZE_MAX];
 
     oled.home();
     oled.set2X();
@@ -809,8 +808,8 @@ void GoToSleep()
     DISABLE_OLED_VCC;
     DISABLE_RTC_VCC;
 
-    digitalWrite(A4, LOW);
-    digitalWrite(A5, LOW);
+    digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
+    digitalWrite(SCL, LOW);
 
     wake_up_cause = CYCLIC;
 
@@ -834,7 +833,7 @@ void GoToSleep()
 
         InitOled();
         InitRTC();
-        //        FlashWakeup();
+//        FlashWakeup();
 
         state_current->oled_update();
     }
@@ -844,10 +843,10 @@ uint16_t ReadVbatMv()
 {
     analogReference(INTERNAL); // Referencia interna de 1.1V
 
-    uint16_t adc_vbat = analogRead(A7);
+    uint16_t adc_vbat = analogRead(VBAT_IN);
 
     for (int i = 0; i < 10; i++) {
-        adc_vbat = analogRead(A7);
+        adc_vbat = analogRead(VBAT_IN);
         delay(1);
     }
 
@@ -864,6 +863,8 @@ void ReadTempData()
 
     while ((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
         delay(50);
+    
+    DEBUG("safeguard_loop"); DEBUGLN(safeguard_loop);
 
     /* To avoid use of floats, multiply values by 10 and use 'de */
     td.temperature = DHT.temperature * 10;
@@ -977,6 +978,7 @@ void InitFlash()
     else {
         DEBUGLN("InitFlash ERROR.");
     }
+    FlashSleep();
 #endif
 }
 
@@ -1033,7 +1035,6 @@ void InitRTC()
         /* Nothing */
     }
 
-    uint32_t unixtime = rtc.now().unixtime(); // should just work
     DEBUG("InitRTC OK. Unixtime: ");
-    DEBUGLN(unixtime);
+    DEBUGLN(rtc.now().unixtime());
 }

@@ -46,6 +46,15 @@ enum {
     DIGITAL_PIN_COUNT
 };
 
+#define A0 
+#define A1 
+#define A2 
+#define A3 
+#define SDA A4 
+#define SCL A5 
+#define A6 
+#define VBAT_IN A7 
+
 #define NULL_PTR (void*)0
 
 #define LED_ON      digitalWrite(INFO_LED, HIGH)
