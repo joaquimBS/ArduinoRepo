@@ -202,8 +202,8 @@ void FlashWakeup();
 void FlashSleep();
 void ReadAndDebouncePushbutton();
 void ResetTimerToSleep();
-void HeaterOFF();
 void HeaterON();
+void HeaterOFF();
 void SetThermoState(ThermoStateFunctions *new_state);
 void GetTimeFormattedHM(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_r);
 void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_r);
@@ -481,34 +481,44 @@ void ClickTimoutToSleep(PushButtonState click_type)
 
 void HeaterON()
 {
-    td.heater_status = HEATER_ON;
+    if(td.heater_status == HEATER_ON) {
+        /* Keep the same heater status */
+    }
+    else {
+        td.heater_status = HEATER_ON;
 
 #ifdef USE_DEBUG
-    //    LED_ON;
+        //    LED_ON;
 #endif
-    digitalWrite(RELAY_MINUS, LOW);
-    digitalWrite(RELAY_PLUS, HIGH);
+        digitalWrite(RELAY_MINUS, LOW);
+        digitalWrite(RELAY_PLUS, HIGH);
 
-    delay(250);
+        delay(250);
 
-    digitalWrite(RELAY_MINUS, LOW);
-    digitalWrite(RELAY_PLUS, LOW);
+        digitalWrite(RELAY_MINUS, LOW);
+        digitalWrite(RELAY_PLUS, LOW);
+    }
 }
 
 void HeaterOFF()
 {
-    td.heater_status = HEATER_OFF;
+    if(td.heater_status == HEATER_OFF) {
+        /* Keep the same heater status */
+    }
+    else {
+        td.heater_status = HEATER_OFF;
 
 #ifdef USE_DEBUG
     //    LED_OFF;
 #endif
-    digitalWrite(RELAY_MINUS, HIGH);
-    digitalWrite(RELAY_PLUS, LOW);
+        digitalWrite(RELAY_MINUS, HIGH);
+        digitalWrite(RELAY_PLUS, LOW);
 
-    delay(250);
+        delay(250);
 
-    digitalWrite(RELAY_MINUS, LOW);
-    digitalWrite(RELAY_PLUS, LOW);
+        digitalWrite(RELAY_MINUS, LOW);
+        digitalWrite(RELAY_PLUS, LOW);
+    }
 }
 
 //-------------- Thermostat Logic Section --------------
