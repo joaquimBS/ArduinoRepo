@@ -7,9 +7,9 @@
 #include "Thermostat.h"
 
 // #include "MemoryFree.h"
-#include "dht.h"        // https://github.com/RobTillaart/Arduino/archive/master.zip
-#include "LowPower.h"   // https://github.com/adafruit/RTClib/archive/1.2.0.zip
-#include "RTClib.h"     // https://github.com/adafruit/RTClib/tree/1.2.0
+#include "DHT.h"        // https://github.com/adafruit/DHT-sensor-library/archive/1.3.0.zip
+#include "LowPower.h"   // https://github.com/rocketscream/Low-Power/archive/V1.6.zip
+#include "RTClib.h"     // https://github.com/adafruit/RTClib/archive/1.2.0.zip
 
 /*-------------------------------- Defines -----------------------------------*/
 #define WITH_RFM69
@@ -56,16 +56,14 @@ boolean flash_is_awake = false;
 #define ENABLE_RTC_VCC  digitalWrite(RTC_VCC, HIGH)
 #define DISABLE_RTC_VCC digitalWrite(RTC_VCC, LOW)
 
-dht DHT;
+DHT dht(DHT_PIN, DHT22);
 RTC_DS1307 rtc;
 
 #define SHORT_CLICK_TIME_MS 80
 #define LONG_CLICK_TIME_MS 500
 #define VERYLONG_CLICK_TIME_MS 3000
 #define PB_PRESSED LOW  // Pin must be INPUT_PULLUP and pushbutton to GND
-#define PB_RELEASED HIGH
-
-#define SERIAL_BR 115200
+#define PB_RELEASED HIGH  // Pin must be INPUT_PULLUP and pushbutton to GND
 
 #define TIME_ZERO ((uint16_t)0)
 #define TIMER_DISABLED ((uint16_t)-1)
@@ -316,6 +314,8 @@ void setup()
     InitFlash();
     InitOled();
     InitRTC();
+    
+    dht.begin();
 
     LED_OFF;
 
@@ -871,16 +871,9 @@ uint16_t ReadVbatMv()
 
 void ReadTempData()
 {
-    int safeguard_loop = 20;
-
-    while ((DHT.read22(DHT_PIN) != DHTLIB_OK) && (safeguard_loop-- > 0))
-        delay(50);
-    
-    DEBUG("safeguard_loop"); DEBUGLN(safeguard_loop);
-
     /* To avoid use of floats, multiply values by 10 and use 'de */
-    td.temperature = DHT.temperature * 10;
-    td.humidity = DHT.humidity * 10;
+    td.temperature = dht.readTemperature(false, true) * 10;
+    td.humidity = dht.readHumidity(true) * 10;
 }
 
 /*
