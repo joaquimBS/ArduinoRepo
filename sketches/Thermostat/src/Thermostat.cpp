@@ -292,6 +292,8 @@ void InitIOPins()
     pinMode(OLED_VCC, OUTPUT);
     pinMode(RTC_VCC, OUTPUT);
     pinMode(BUTTON_CTRL, INPUT_PULLUP);
+    pinMode(BUTTON_UP, INPUT_PULLUP);
+    pinMode(BUTTON_DOWN, INPUT_PULLUP);
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_PLUS, OUTPUT);
     pinMode(RELAY_MINUS, OUTPUT);
@@ -896,12 +898,12 @@ void ReadAndDebouncePushbutton()
         if (digitalRead(BUTTON_CTRL) == PB_PRESSED) {
             pressed_button = BUTTON_CTRL;
         }
-            //        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
-            //            pressed_button = BUTTON_UP;
-            //        }
-            //        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
-            //            pressed_button = BUTTON_DOWN;
-            //        }
+        else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
+            pressed_button = BUTTON_UP;
+        }
+        else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
+            pressed_button = BUTTON_DOWN;
+        }
         else {
             pressed_button = 0;
         }
