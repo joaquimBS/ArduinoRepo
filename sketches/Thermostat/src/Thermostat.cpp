@@ -180,6 +180,7 @@ void InitOled();
 void InitRTC();
 
 void GoToSleep();
+HeaterStatus ReadRelayFeedback();
 uint16_t ReadVbatMv();
 void ReadTempData();
 void TransmitToBase();
@@ -285,6 +286,7 @@ void InitIOPins()
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_PLUS, OUTPUT);
     pinMode(RELAY_MINUS, OUTPUT);
+    pinMode(RELAY_FEEDBACK, INPUT_PULLUP);
 }
 
 void setup()
@@ -315,6 +317,7 @@ void setup()
     // Set initial values to some variables
     td.setpoint = (int) (td.temperature / 10)*10;
     td.remaining_time_s = TIMER_DISABLED;
+    td.heater_status = ReadRelayFeedback();
     SetThermoState(&thermo_state_time_to_off);
     state_current->oled_update();
     
@@ -882,6 +885,12 @@ void GoToSleep()
 
         state_current->oled_update();
     }
+}
+
+HeaterStatus ReadRelayFeedback()
+{
+    /* Note the !. It is a negated signal */
+    return (HeaterStatus)!digitalRead(RELAY_FEEDBACK);
 }
 
 uint16_t ReadVbatMv()

@@ -39,7 +39,7 @@ enum {
     D13_RESERVED_RADIO, /* SCK */
     BUTTON_DOWN,
     BUTTON_UP,
-    D16, /* Future BUTTON_CTRL */
+    RELAY_FEEDBACK,
     RTC_VCC,
     D18,
     D19,

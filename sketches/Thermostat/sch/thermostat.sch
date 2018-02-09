@@ -1105,7 +1105,7 @@ You are welcome to use this library for commercial purposes. For attribution, we
 <wire x1="60.96" y1="25.4" x2="132.08" y2="25.4" width="0.1524" layer="91"/>
 </segment>
 </net>
-<net name="RELE+" class="0">
+<net name="RELAY+" class="0">
 <segment>
 <pinref part="U1" gate="G$1" pin="D4"/>
 <wire x1="25.4" y1="30.48" x2="0" y2="30.48" width="0.1524" layer="91"/>
@@ -1113,7 +1113,7 @@ You are welcome to use this library for commercial purposes. For attribution, we
 <label x="17.78" y="30.48" size="1.778" layer="95"/>
 </segment>
 </net>
-<net name="RELE-" class="0">
+<net name="RELAY-" class="0">
 <segment>
 <pinref part="U1" gate="G$1" pin="D5"/>
 <wire x1="-20.32" y1="40.64" x2="12.7" y2="40.64" width="0.1524" layer="91"/>
@@ -1268,6 +1268,17 @@ You are welcome to use this library for commercial purposes. For attribution, we
 <pinref part="SW1" gate="G$1" pin="P$1"/>
 <wire x1="60.96" y1="7.62" x2="86.36" y2="7.62" width="0.1524" layer="91"/>
 <pinref part="U1" gate="G$1" pin="D14/A0"/>
+</segment>
+</net>
+<net name="RELAY_FDBK" class="0">
+<segment>
+<pinref part="RE1" gate="G$1" pin="P$8"/>
+<wire x1="0" y1="25.4" x2="7.62" y2="25.4" width="0.1524" layer="91"/>
+<label x="-2.54" y="25.4" size="1.778" layer="95"/>
+</segment>
+<segment>
+<pinref part="U1" gate="G$1" pin="D16/A2"/>
+<wire x1="60.96" y1="12.7" x2="76.2" y2="12.7" width="0.1524" layer="91"/>
 </segment>
 </net>
 </nets>
