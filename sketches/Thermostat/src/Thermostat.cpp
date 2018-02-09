@@ -420,9 +420,14 @@ void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
             }
         }
         else if(pb_id == BUTTON_UP) {
-            td.setpoint += TEMP_SETPOINT_INC;
-            if (td.setpoint > TEMP_SETPOINT_MAX) {
+            if (td.setpoint == TEMP_SETPOINT_OFF) {
+                td.setpoint = TEMP_SETPOINT_MIN;
+            }
+            else if (td.setpoint > TEMP_SETPOINT_MAX) {
                 td.setpoint = TEMP_SETPOINT_MAX;
+            }
+            else {
+                td.setpoint += TEMP_SETPOINT_INC;
             }
         }
         else if(pb_id == BUTTON_CTRL) {
