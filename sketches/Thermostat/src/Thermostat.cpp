@@ -71,7 +71,7 @@ RTC_DS1307 rtc;
 #ifdef USE_DEBUG
 #define TIME_INCREMENT_1800_S ((unsigned int)1801)
 #define TIME_INCREMENT_900_S ((unsigned int)901)
-#define TIME_INCREMENT_15_S ((unsigned int)15)
+#define TIME_INCREMENT_20_S ((unsigned int)15)
 #define TIME_INCREMENT_5_S ((unsigned int)5)
 
 #define MAX_TIME_TO_OFF_S ((unsigned int)4*3601)
@@ -84,22 +84,10 @@ RTC_DS1307 rtc;
 #define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
 #define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
-
-#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
-#define MIN_CYCLES_OF_SLEEP_S ((unsigned int)15)
-#define MAX_CYCLES_OF_SLEEP_S ((unsigned int)10*60)
-//#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10000)
-//#define TIME_INCREMENT_1800_S ((unsigned int)10)
-//#define TIME_INCREMENT_900_S ((unsigned int)10)
-//#define MAX_TIME_TO_OFF_S ((unsigned int)90)
-//#define MAX_TIME_TO_ON_S ((unsigned int)90)
-//#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)5)
-//#define ON_AFTER_TIME_TO_ON_MAX_S ((unsigned int)5)
-//#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
 #define TIME_INCREMENT_1800_S ((unsigned int)1801)
 #define TIME_INCREMENT_900_S ((unsigned int)901)
-#define TIME_INCREMENT_15_S ((unsigned int)15)
+#define TIME_INCREMENT_20_S ((unsigned int)20)
 #define TIME_INCREMENT_5_S ((unsigned int)5)
 
 #define MAX_TIME_TO_OFF_S ((unsigned int)4*3601)
@@ -112,11 +100,11 @@ RTC_DS1307 rtc;
 #define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
 #define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
-
-#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
-#define MIN_CYCLES_OF_SLEEP_S ((unsigned int)15)
-#define MAX_CYCLES_OF_SLEEP_S ((unsigned int)10*60)
 #endif
+
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)5)
+#define MIN_CYCLES_OF_SLEEP_S ((unsigned int)20)
+#define MAX_CYCLES_OF_SLEEP_S ((unsigned int)5*60)
 
 #define TEMP_HYSTERESIS_RANGE 10   // remember 0.1C resolution
 #define TEMP_SETPOINT_INC 5
@@ -162,7 +150,7 @@ typedef enum
 } WakeUpCause;
 
 typedef void (*VoidCallback)(void);
-typedef void (*ClickCallback)(PushButtonState);
+typedef void (*ClickCallback)(uint8_t, PushButtonState);
 
 typedef struct
 {
@@ -209,26 +197,28 @@ void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_form
 void DuringPowerON();
 void DuringPowerSave();
 
+void OledEngineeringMode();
+
 void ThermoLogicTimeToOff();
 void OledUpdateTimeToOff();
-void ClickTimeToOff(PushButtonState);
+void ClickTimeToOff(uint8_t, PushButtonState);
 
 void ThermoLogicTimeToOn();
 void OledUpdateTimeToOn();
-void ClickTimeToOn(PushButtonState);
+void ClickTimeToOn(uint8_t, PushButtonState);
 
 void ThermoLogicTempSetpoint();
 void OledUpdateTempSetpoint();
-void ClickTempSetpoint(PushButtonState);
+void ClickTempSetpoint(uint8_t, PushButtonState);
 
 void OledUpdateTimeOnAfterTimeToOn();
-void ClickTimeOnAfterTimeToOn(PushButtonState);
+void ClickTimeOnAfterTimeToOn(uint8_t, PushButtonState);
 
 void OledUpdateSleepTime();
-void ClickSleepTime(PushButtonState);
+void ClickSleepTime(uint8_t, PushButtonState);
 
 void OledUpdateTimeoutToSleep();
-void ClickTimoutToSleep(PushButtonState);
+void ClickTimoutToSleep(uint8_t, PushButtonState);
 
 /* ---------------------------- Global Variables ---------------------------- */
 ThermostatData td = {HEATER_OFF, MODE_TIME, POWER_ON, 0, 0, 0, 0, 0};
@@ -313,23 +303,12 @@ void setup()
     InitRadio();
     InitFlash();
     InitOled();
-    InitRTC();
+//    InitRTC();
     
     dht.begin();
 
     LED_OFF;
-
-    //    while(1) {
-    //        uint32_t unixtime = rtc.now().unixtime(); // should just work
-    //        DEBUGLN(unixtime);
-    //        
-    //        oled.home();
-    //        oled.clearToEOL();
-    //        oled.println(unixtime);
-    //        
-    //        delay(1000);
-    //    }
-
+    
     // Make an initial data sampling.
     SampleData();
 
@@ -338,7 +317,7 @@ void setup()
     td.remaining_time_s = TIMER_DISABLED;
     SetThermoState(&thermo_state_time_to_off);
     state_current->oled_update();
-
+    
     ResetTimerToSleep();
 
     HeaterOFF();
@@ -354,69 +333,33 @@ void loop()
     }
 }
 
-void ClickTimeToOff(PushButtonState click_type)
+void ClickTimeToOff(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.remaining_time_s += TIME_INCREMENT_1800_S;
-        if (td.remaining_time_s > MAX_TIME_TO_OFF_S) {
-            td.remaining_time_s = TIMER_DISABLED;
-        }
-    }
-    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
-        oled.clear();
-        SetThermoState(&thermo_state_time_to_on);
-    }
-    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
-        /* TBD */
-    }
-    else {
-        /* Nothing */
-    }
-}
-
-void ClickTimeToOn(PushButtonState click_type)
-{
-    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        td.remaining_time_s += TIME_INCREMENT_900_S;
-        if (td.remaining_time_s > MAX_TIME_TO_ON_S) {
-            td.remaining_time_s = TIMER_DISABLED;
-        }
-    }
-    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
-        oled.clear();
-        SetThermoState(&thermo_state_temp_setpoint);
-    }
-    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
-        /* TBD */
-    }
-    else {
-        /* Nothing */
-    }
-}
-
-void ClickTempSetpoint(PushButtonState click_type)
-{
-    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        if (td.setpoint == TEMP_SETPOINT_OFF) {
-            td.setpoint = TEMP_SETPOINT_MIN;
-        }
-        else {
-            td.setpoint += TEMP_SETPOINT_INC;
-
-            if (td.setpoint == TEMP_SETPOINT_OFF) {
-                td.setpoint = TEMP_SETPOINT_MIN;
-            }
-            else if (td.setpoint > TEMP_SETPOINT_MAX) {
-                td.setpoint = TEMP_SETPOINT_OFF;
+        if(pb_id == BUTTON_DOWN) {
+            if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
+                td.remaining_time_s -= TIME_INCREMENT_1800_S;
             }
             else {
-                /* Nothing */
+                td.remaining_time_s = TIME_ZERO;
             }
+        }
+        else if(pb_id == BUTTON_UP) {
+            td.remaining_time_s += TIME_INCREMENT_1800_S;
+            if (td.remaining_time_s > MAX_TIME_TO_OFF_S) {
+                td.remaining_time_s = MAX_TIME_TO_OFF_S;
+            }
+        }
+        else if(pb_id == BUTTON_CTRL) {
+            oled.clear();
+            SetThermoState(&thermo_state_time_to_on);
+        }
+        else {
+            /* Nothing */
         }
     }
     else if (click_type == PB_LONG_CLICK_CONFIRMED) {
-        oled.clear();
-        SetThermoState(&thermo_state_time_to_off);
+        /* TBD */
     }
     else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
         /* TBD */
@@ -426,8 +369,81 @@ void ClickTempSetpoint(PushButtonState click_type)
     }
 }
 
-void ClickTimeOnAfterTimeToOn(PushButtonState click_type)
+void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
 {
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+        if(pb_id == BUTTON_DOWN) {
+            if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
+                td.remaining_time_s -= TIME_INCREMENT_1800_S;
+            }
+            else {
+                td.remaining_time_s = TIME_ZERO;
+            }
+        }
+        else if(pb_id == BUTTON_UP) {
+            td.remaining_time_s += TIME_INCREMENT_1800_S;
+            if (td.remaining_time_s > MAX_TIME_TO_ON_S) {
+                td.remaining_time_s = MAX_TIME_TO_ON_S;
+            }
+        }
+        else if(pb_id == BUTTON_CTRL) {
+            oled.clear();
+            SetThermoState(&thermo_state_temp_setpoint);
+        }
+        else {
+            /* Nothing */
+        }
+    }
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        /* TBD */
+    }
+    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
+        /* TBD */
+    }
+    else {
+        /* Nothing */
+    }
+}
+
+void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
+{
+    if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+        if(pb_id == BUTTON_DOWN) {
+            if (td.setpoint > TEMP_SETPOINT_MIN) {
+                td.setpoint -= TEMP_SETPOINT_INC;
+            }
+            else {
+                td.setpoint = TEMP_SETPOINT_OFF;
+            }
+        }
+        else if(pb_id == BUTTON_UP) {
+            td.setpoint += TEMP_SETPOINT_INC;
+            if (td.setpoint > TEMP_SETPOINT_MAX) {
+                td.setpoint = TEMP_SETPOINT_MAX;
+            }
+        }
+        else if(pb_id == BUTTON_CTRL) {
+            oled.clear();
+            SetThermoState(&thermo_state_time_to_off);
+        }
+        else {
+            /* Nothing */
+        }
+    }
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+        /* TBD */
+    }
+    else if (click_type == PB_VERYLONG_CLICK_CONFIRMED) {
+        /* TBD */
+    }
+    else {
+        /* Nothing */
+    }
+}
+
+void ClickTimeOnAfterTimeToOn(uint8_t pb_id, PushButtonState click_type)
+{
+    (void)pb_id;
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         on_after_time_to_on_config += TIME_INCREMENT_900_S;
         if (on_after_time_to_on_config > MAX_ON_AFTER_TIME_TO_ON_S) {
@@ -444,15 +460,16 @@ void ClickTimeOnAfterTimeToOn(PushButtonState click_type)
     }
 }
 
-void ClickSleepTime(PushButtonState click_type)
+void ClickSleepTime(uint8_t pb_id, PushButtonState click_type)
 {
+    (void)pb_id;
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
-        sleep_cycles_config += TIME_INCREMENT_15_S;
+        sleep_cycles_config += TIME_INCREMENT_20_S;
         if (sleep_cycles_config > MAX_CYCLES_OF_SLEEP_S) {
             sleep_cycles_config = MIN_CYCLES_OF_SLEEP_S;
         }
     }
-    else if (click_type == PB_LONG_CLICK_CONFIRMED) {
+    else if (click_type == PB_LONG_CLICK_CONFIRMED) {        
         oled.clear();
         state_current = &config_state_timeout_to_sleep;
         /* Nothing */
@@ -462,8 +479,9 @@ void ClickSleepTime(PushButtonState click_type)
     }
 }
 
-void ClickTimoutToSleep(PushButtonState click_type)
+void ClickTimoutToSleep(uint8_t pb_id, PushButtonState click_type)
 {
+    (void)pb_id;
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         timeout_to_sleep_config += TIME_INCREMENT_5_S;
         if (timeout_to_sleep_config > MAX_TIMEOUT_TO_SLEEP_S) {
@@ -575,6 +593,8 @@ void ThermoLogicTempSetpoint()
 
 void DuringPowerSave()
 {
+//    unsigned long m = micros();
+
     if (remaining_sleep_cycles == 0) {
         remaining_sleep_cycles = sleep_cycles_config;
 
@@ -595,9 +615,12 @@ void DuringPowerSave()
 
         if (remaining_sleep_cycles != 0)
             remaining_sleep_cycles--;
-
-        GoToSleep();
     }
+    
+//    DEBUG("DuringPowerSave  "); DEBUGLN(micros() - m);
+//    delay(50);
+    
+    GoToSleep();
 }
 
 void DuringPowerON()
@@ -610,8 +633,6 @@ void DuringPowerON()
 
     if (millis() > timer_1s) {
         timer_1s = millis() + 1000;
-
-        DEBUGLN(rtc.now().unixtime());
 
         if ((td.remaining_time_s != TIMER_DISABLED) &&
             (td.remaining_time_s > TIME_ZERO))
@@ -649,7 +670,7 @@ void GetTimeFormattedHM(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_forma
     uint8_t hours = 0;
     uint8_t minutes = 0;
 
-    if (time_to_format_s != TIMER_DISABLED) {
+    if ((time_to_format_s != TIMER_DISABLED) && (time_to_format_s != TIME_ZERO)) {
         hours = time_to_format_s / 3600;
         minutes = (time_to_format_s % 3600) / 60;
         snprintf(in_buff, OLED_LINE_SIZE_MAX, "%d:%.2d h", hours, minutes);
@@ -665,7 +686,7 @@ void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_form
     uint8_t minutes = 0;
     uint8_t seconds = 0;
 
-    if (time_to_format_s != TIMER_DISABLED) {
+    if ((time_to_format_s != TIMER_DISABLED) && (time_to_format_s != TIME_ZERO)) {
         hours = time_to_format_s / 3600;
         minutes = (time_to_format_s % 3600) / 60;
         seconds = (time_to_format_s % 3600) % 60;
@@ -674,6 +695,17 @@ void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_form
     else {
         snprintf(in_buff, OLED_LINE_SIZE_MAX, "APAGAT");
     }
+}
+
+void OledEngineeringMode()
+{
+    char buff[OLED_LINE_SIZE_MAX];
+    
+    oled.clear();
+    oled.home();
+    
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%d mV", ReadVbatMv());
+    oled.println(buff);
 }
 
 void OledUpdateTimeToOff()
@@ -822,6 +854,7 @@ void GoToSleep()
 
     digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
     digitalWrite(SCL, LOW);
+    pinMode(DHT_PIN, INPUT_PULLUP);
 
     wake_up_cause = CYCLIC;
 
@@ -829,7 +862,7 @@ void GoToSleep()
     // Enter power down state with ADC and BOD module disabled.
     // Wake up when wake up pin is low.
     LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-    //    delay(1000);
+//        delay(1000);
     /* ZZzzZZzzZZzz */
 
     // Disable external pin interrupt on wake up pin.
@@ -844,7 +877,7 @@ void GoToSleep()
         Wire.begin();
 
         InitOled();
-        InitRTC();
+//        InitRTC();
 //        FlashWakeup();
 
         state_current->oled_update();
@@ -873,7 +906,10 @@ void ReadTempData()
 {
     /* To avoid use of floats, multiply values by 10 and use 'de */
     td.temperature = dht.readTemperature(false, true) * 10;
-    td.humidity = dht.readHumidity(true) * 10;
+    td.humidity = dht.readHumidity() * 10;
+    
+    DEBUG("temp:"); DEBUGLN(td.temperature);
+    DEBUG("hum:"); DEBUGLN(td.humidity);
 }
 
 /*
@@ -883,25 +919,25 @@ void ReadTempData()
 void ReadAndDebouncePushbutton()
 {
     static PushButtonState pb_state = PB_IDLE;
-    static int pressed_button = 0; /* 0 means NONE */
+    static int pb_id = 0; /* 0 means NONE */
     static long long tick_time = 0;
 
     switch (pb_state) {
     case PB_IDLE:
         if (digitalRead(BUTTON_CTRL) == PB_PRESSED) {
-            pressed_button = BUTTON_CTRL;
+            pb_id = BUTTON_CTRL;
         }
         else if (digitalRead(BUTTON_UP) == PB_PRESSED) {
-            pressed_button = BUTTON_UP;
+            pb_id = BUTTON_UP;
         }
         else if (digitalRead(BUTTON_DOWN) == PB_PRESSED) {
-            pressed_button = BUTTON_DOWN;
+            pb_id = BUTTON_DOWN;
         }
         else {
-            pressed_button = 0;
+            pb_id = 0;
         }
 
-        if (pressed_button != 0) {
+        if (pb_id != 0) {
             pb_state = PB_DEBOUCE;
             tick_time = millis();
         }
@@ -911,7 +947,7 @@ void ReadAndDebouncePushbutton()
         break;
 
     case PB_DEBOUCE:
-        if (digitalRead(pressed_button) == PB_RELEASED) {
+        if (digitalRead(pb_id) == PB_RELEASED) {
             /* Read the delta since PB was pressed. From higher to lower value */
             if ((millis() - tick_time) > VERYLONG_CLICK_TIME_MS) {
                 pb_state = PB_VERYLONG_CLICK_CONFIRMED;
@@ -938,19 +974,23 @@ void ReadAndDebouncePushbutton()
     case PB_VERYLONG_CLICK_CONFIRMED:
         /* Reset sleep timer because button is pressed */
         ResetTimerToSleep();
-
+        
         /* Switch FSM: Thermo -> Config */
         if (pb_state == PB_VERYLONG_CLICK_CONFIRMED) {
             oled.clear();
             state_current_saved = state_current;
             state_current = &config_state_on_after_time_to_on;
+            
+            OledEngineeringMode();
+            delay(1000);
         }
         else {
             /* If its click or long click, pass it to the state */
-            state_current->click_callback(pb_state);
+            state_current->click_callback(pb_id, pb_state);
         }
-
+        
         state_current->oled_update();
+        
         pb_state = PB_IDLE;
         break;
     }

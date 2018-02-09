@@ -1259,13 +1259,15 @@ You are welcome to use this library for commercial purposes. For attribution, we
 <net name="N$4" class="0">
 <segment>
 <pinref part="SW2" gate="G$1" pin="P$1"/>
-<wire x1="66.04" y1="10.16" x2="76.2" y2="10.16" width="0.1524" layer="91"/>
+<wire x1="60.96" y1="10.16" x2="76.2" y2="10.16" width="0.1524" layer="91"/>
+<pinref part="U1" gate="G$1" pin="D15/A1"/>
 </segment>
 </net>
 <net name="N$7" class="0">
 <segment>
 <pinref part="SW1" gate="G$1" pin="P$1"/>
-<wire x1="66.04" y1="7.62" x2="86.36" y2="7.62" width="0.1524" layer="91"/>
+<wire x1="60.96" y1="7.62" x2="86.36" y2="7.62" width="0.1524" layer="91"/>
+<pinref part="U1" gate="G$1" pin="D14/A0"/>
 </segment>
 </net>
 </nets>

@@ -23,7 +23,7 @@
 
 // I/O Digital Pins
 enum {
-    D0, /* RX */
+    D0 = (uint8_t)0, /* RX */
     D1, /* TX */
     D2_RESERVED_RADIO,
     BUTTON_CTRL, /* Future RELAY_FEEDBACK */
@@ -37,8 +37,8 @@ enum {
     D11_RESERVED_RADIO, /* MOSI */
     D12_RESERVED_RADIO, /* MISO */
     D13_RESERVED_RADIO, /* SCK */
-    BUTTON_UP,
     BUTTON_DOWN,
+    BUTTON_UP,
     D16, /* Future BUTTON_CTRL */
     RTC_VCC,
     D18,
@@ -60,7 +60,7 @@ enum {
 #define LED_ON      digitalWrite(INFO_LED, HIGH)
 #define LED_OFF     digitalWrite(INFO_LED, LOW)
 
-// #define USE_DEBUG
+//#define USE_DEBUG
 #define SERIAL_BR 115200
 
 #if defined(USE_DEBUG)
