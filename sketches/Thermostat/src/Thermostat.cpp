@@ -16,7 +16,7 @@
 #define WITH_SPIFLASH
 #define WITH_OLED
 
-#define TX_BUFF_LEN ((uint8_t) 12)
+#define TX_BUFF_LEN_MAX ((uint8_t) 64)
 #define MAGIC_VBAT_OFFSET_MV ((int8_t) -40) // Empirically obtained
 
 #ifdef WITH_OLED
@@ -33,9 +33,9 @@ SSD1306AsciiAvrI2c oled;
 //#include <RFM69_ATC.h>     // https://github.com/lowpowerlab/RFM69
 #include "RFM69_OTA.h"     // https://github.com/lowpowerlab/RFM69
 RFM69 radio;
-#define GATEWAYID 1
+#define GATEWAYID 255
 #define NETWORKID 100
-#define NODEID 11
+#define NODEID 0
 #define FREQUENCY RF69_868MHZ
 #define ENCRYPTKEY "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
 #endif
@@ -69,21 +69,23 @@ RTC_DS1307 rtc;
 #define TIMER_DISABLED ((uint16_t)-1)
 
 #ifdef USE_DEBUG
-#define TIME_INCREMENT_1800_S ((unsigned int)1801)
-#define TIME_INCREMENT_900_S ((unsigned int)901)
-#define TIME_INCREMENT_20_S ((unsigned int)15)
+#define TIME_INCREMENT_1800_S ((unsigned int)5)
+#define TIME_INCREMENT_900_S ((unsigned int)5)
+#define TIME_INCREMENT_20_S ((unsigned int)5)
 #define TIME_INCREMENT_5_S ((unsigned int)5)
 
-#define MAX_TIME_TO_OFF_S ((unsigned int)4*3601)
-#define MAX_TIME_TO_ON_S ((unsigned int)12*3601)
+#define MAX_TIME_TO_OFF_S ((unsigned int)180)
+#define MAX_TIME_TO_ON_S ((unsigned int)180)
 
-#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)3600)
-#define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)1800)
-#define MAX_ON_AFTER_TIME_TO_ON_S ((unsigned int)3*3600)
+#define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)60)
+#define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)30)
+#define MAX_ON_AFTER_TIME_TO_ON_S ((unsigned int)180)
 
-#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
+#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
+
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
 #define TIME_INCREMENT_1800_S ((unsigned int)1801)
 #define TIME_INCREMENT_900_S ((unsigned int)901)
@@ -100,9 +102,10 @@ RTC_DS1307 rtc;
 #define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
 #define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
+
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
 #endif
 
-#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)5)
 #define MIN_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #define MAX_CYCLES_OF_SLEEP_S ((unsigned int)5*60)
 
@@ -139,14 +142,14 @@ typedef enum
 
 typedef enum
 {
-    POWER_ON = 0,
-    POWER_SAVE
+    POWER_SAVE = 0,
+    POWER_ON
 } ThermostatPowerMode;
 
 typedef enum
 {
-    CYCLIC = 0,
-    INT_EXT
+    INT_EXT = 0,
+    CYCLIC = 1
 } WakeUpCause;
 
 typedef void (*VoidCallback)(void);
@@ -171,6 +174,13 @@ typedef struct
     ClickCallback click_callback;
 } ThermoStateFunctions;
 
+typedef struct
+{
+    uint8_t h;
+    uint8_t m;
+    uint8_t s;
+} TimeHMS;
+
 /*-------------------------- Routine Prototypes ------------------------------*/
 void RsiButtonCtrl();
 void InitIOPins();
@@ -180,7 +190,7 @@ void InitOled();
 void InitRTC();
 
 void GoToSleep();
-HeaterStatus ReadRelayFeedback();
+HeaterStatus ReadHeaterStatus();
 uint16_t ReadVbatMv();
 void ReadTempData();
 void TransmitToBase();
@@ -192,8 +202,7 @@ void ResetTimerToSleep();
 void HeaterON();
 void HeaterOFF();
 void SetThermoState(ThermoStateFunctions *new_state);
-void GetTimeFormattedHM(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_r);
-void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_r);
+TimeHMS SecondsToHMS(uint16_t seconds);
 
 void DuringPowerON();
 void DuringPowerSave();
@@ -201,58 +210,60 @@ void DuringPowerSave();
 void OledEngineeringMode();
 
 void ThermoLogicTimeToOff();
-void OledUpdateTimeToOff();
+void OledStateTimeToOff();
 void ClickTimeToOff(uint8_t, PushButtonState);
 
 void ThermoLogicTimeToOn();
-void OledUpdateTimeToOn();
+void OledStateTimeToOn();
 void ClickTimeToOn(uint8_t, PushButtonState);
 
 void ThermoLogicTempSetpoint();
-void OledUpdateTempSetpoint();
+void OledStateTempSetpoint();
 void ClickTempSetpoint(uint8_t, PushButtonState);
 
-void OledUpdateTimeOnAfterTimeToOn();
+void OledConfigTimeOnAfterTimeToOn();
 void ClickTimeOnAfterTimeToOn(uint8_t, PushButtonState);
 
-void OledUpdateSleepTime();
+void OledConfigSleepTime();
 void ClickSleepTime(uint8_t, PushButtonState);
 
-void OledUpdateTimeoutToSleep();
+void OledConfigTimeoutToSleep();
 void ClickTimoutToSleep(uint8_t, PushButtonState);
 
 /* ---------------------------- Global Variables ---------------------------- */
 ThermostatData td = {HEATER_OFF, MODE_TIME, POWER_ON, 0, 0, 0, 0, 0};
-volatile WakeUpCause wake_up_cause = CYCLIC;
+
+/* IMPORTANT to keep wake_up_cause init value to INT_EXT */
+volatile WakeUpCause wake_up_cause = INT_EXT;
 
 ThermoStateFunctions thermo_state_time_to_off{
     ThermoLogicTimeToOff,
-    OledUpdateTimeToOff,
+    OledStateTimeToOff,
     ClickTimeToOff};
 
 ThermoStateFunctions thermo_state_time_to_on{
     ThermoLogicTimeToOn,
-    OledUpdateTimeToOn,
+    OledStateTimeToOn,
     ClickTimeToOn};
 
 ThermoStateFunctions thermo_state_temp_setpoint{
     ThermoLogicTempSetpoint,
-    OledUpdateTempSetpoint,
+    OledStateTempSetpoint,
     ClickTempSetpoint};
 
 ThermoStateFunctions config_state_on_after_time_to_on{
     NULL_PTR,
-    OledUpdateTimeOnAfterTimeToOn,
+    OledConfigTimeOnAfterTimeToOn,
     ClickTimeOnAfterTimeToOn};
 
 ThermoStateFunctions config_state_sleep_time_s{
     NULL_PTR,
-    OledUpdateSleepTime,
+    OledConfigSleepTime,
     ClickSleepTime};
 
 ThermoStateFunctions config_state_timeout_to_sleep{
     NULL_PTR,
-    OledUpdateTimeoutToSleep,
+    OledConfigTimeoutToSleep,
     ClickTimoutToSleep};
 
 ThermoStateFunctions *state_current = &thermo_state_time_to_off;
@@ -317,12 +328,13 @@ void setup()
     // Set initial values to some variables
     td.setpoint = (int) (td.temperature / 10)*10;
     td.remaining_time_s = TIMER_DISABLED;
-    td.heater_status = ReadRelayFeedback();
+    td.heater_status = ReadHeaterStatus();
     SetThermoState(&thermo_state_time_to_off);
     state_current->oled_update();
     
     ResetTimerToSleep();
 
+    /* Initial safe condition of the heater */
     HeaterOFF();
 }
 
@@ -513,8 +525,6 @@ void HeaterON()
         /* Keep the same heater status */
     }
     else {
-        td.heater_status = HEATER_ON;
-
 #ifdef USE_DEBUG
         //    LED_ON;
 #endif
@@ -534,8 +544,6 @@ void HeaterOFF()
         /* Keep the same heater status */
     }
     else {
-        td.heater_status = HEATER_OFF;
-
 #ifdef USE_DEBUG
     //    LED_OFF;
 #endif
@@ -598,17 +606,25 @@ void ThermoLogicTempSetpoint()
     }
 }
 //------------------------------------------------------
-
+/* TODO Refactor the task_time data and routines */
+static unsigned long init_time = 0;
+static uint32_t task_time = 0;
+static uint32_t periodic_sleep_time = 0;
+static uint8_t periodic_sleep_samples = 0;
 void DuringPowerSave()
 {
-//    unsigned long m = micros();
-
+    init_time = micros();
     if (remaining_sleep_cycles == 0) {
+        DEBUGVAL("periodic_sleep_time_us=", periodic_sleep_time/periodic_sleep_samples);
+        DEBUGVAL("task_time_us=", task_time);
+        
         remaining_sleep_cycles = sleep_cycles_config;
 
+        /* Once in a while, we keep track of the real heater status */
+        td.heater_status = ReadHeaterStatus();
+        
         SampleData();
         state_current->thermo_logic();
-
         TransmitToBase();
     }
     else {
@@ -624,9 +640,6 @@ void DuringPowerSave()
         if (remaining_sleep_cycles != 0)
             remaining_sleep_cycles--;
     }
-    
-//    DEBUG("DuringPowerSave  "); DEBUGLN(micros() - m);
-//    delay(50);
     
     GoToSleep();
 }
@@ -673,38 +686,6 @@ void SetThermoState(ThermoStateFunctions *new_state)
     td.remaining_time_s = TIMER_DISABLED;
 }
 
-void GetTimeFormattedHM(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_s)
-{
-    uint8_t hours = 0;
-    uint8_t minutes = 0;
-
-    if ((time_to_format_s != TIMER_DISABLED) && (time_to_format_s != TIME_ZERO)) {
-        hours = time_to_format_s / 3600;
-        minutes = (time_to_format_s % 3600) / 60;
-        snprintf(in_buff, OLED_LINE_SIZE_MAX, "%d:%.2d h", hours, minutes);
-    }
-    else {
-        snprintf(in_buff, OLED_LINE_SIZE_MAX, "APAGAT");
-    }
-}
-
-void GetTimeFormattedHMS(char in_buff[OLED_LINE_SIZE_MAX], uint16_t time_to_format_s)
-{
-    uint8_t hours = 0;
-    uint8_t minutes = 0;
-    uint8_t seconds = 0;
-
-    if ((time_to_format_s != TIMER_DISABLED) && (time_to_format_s != TIME_ZERO)) {
-        hours = time_to_format_s / 3600;
-        minutes = (time_to_format_s % 3600) / 60;
-        seconds = (time_to_format_s % 3600) % 60;
-        snprintf(in_buff, OLED_LINE_SIZE_MAX, "%d:%.2d:%.2d h", hours, minutes, seconds);
-    }
-    else {
-        snprintf(in_buff, OLED_LINE_SIZE_MAX, "APAGAT");
-    }
-}
-
 void OledEngineeringMode()
 {
     char buff[OLED_LINE_SIZE_MAX];
@@ -714,11 +695,14 @@ void OledEngineeringMode()
     
     snprintf(buff, OLED_LINE_SIZE_MAX, "%d mV", ReadVbatMv());
     oled.println(buff);
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%lu us", task_time);
+    oled.println(buff);
 }
 
-void OledUpdateTimeToOff()
+void OledStateTimeToOff()
 {
     char buff[OLED_LINE_SIZE_MAX];
+    TimeHMS tdata = SecondsToHMS(td.remaining_time_s);
 
     oled.home();
     oled.set2X();
@@ -726,17 +710,19 @@ void OledUpdateTimeToOff()
     oled.println("Encendre");
     oled.println("durant");
 
-    GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
-    oled.println(buff);
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%d:%02d h", tdata.h, tdata.m);    
+    oled.println(td.remaining_time_s == TIMER_DISABLED ? STOP_STR : buff);
+    
     snprintf(buff, OLED_LINE_SIZE_MAX, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
             String(td.humidity / 10).c_str());
     oled.println(buff);
 }
 
-void OledUpdateTimeToOn()
+void OledStateTimeToOn()
 {
     char buff[OLED_LINE_SIZE_MAX];
+    TimeHMS tdata = SecondsToHMS(td.remaining_time_s);
 
     oled.home();
     oled.set2X();
@@ -744,15 +730,16 @@ void OledUpdateTimeToOn()
     oled.println("Encendre");
     oled.println("en");
 
-    GetTimeFormattedHMS(buff, td.remaining_time_s);
     oled.clearToEOL();
-    oled.println(buff);
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%d:%02d h", tdata.h, tdata.m);    
+    oled.println(td.remaining_time_s == TIMER_DISABLED ? STOP_STR : buff);
+
     snprintf(buff, OLED_LINE_SIZE_MAX, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
             String(td.humidity / 10).c_str());
     oled.println(buff);
 }
 
-void OledUpdateTempSetpoint()
+void OledStateTempSetpoint()
 {
     char buff[OLED_LINE_SIZE_MAX];
 
@@ -764,14 +751,14 @@ void OledUpdateTempSetpoint()
     oled.println(buff);
 
     oled.clearToEOL();
-
     snprintf(buff, OLED_LINE_SIZE_MAX, "Obj.: %s", (td.setpoint == 0) ? STOP_STR : String((td.setpoint / 10.0), 1).c_str());
     oled.println(buff);
 }
 
-void OledUpdateTimeOnAfterTimeToOn()
+void OledConfigTimeOnAfterTimeToOn()
 {
     char buff[OLED_LINE_SIZE_MAX];
+    TimeHMS tdata = SecondsToHMS(on_after_time_to_on_config);
 
     oled.home();
     oled.set2X();
@@ -779,29 +766,31 @@ void OledUpdateTimeOnAfterTimeToOn()
     oled.println("ON after");
     oled.println("TimeToOn:");
 
-    GetTimeFormattedHMS(buff, on_after_time_to_on_config);
     oled.clearToEOL();
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%d:%02d h", tdata.h, tdata.m);    
     oled.println(buff);
 }
 
-void OledUpdateSleepTime()
+void OledConfigSleepTime()
 {
-    char buff[17];
+    char buff[OLED_LINE_SIZE_MAX];
+    TimeHMS tdata = SecondsToHMS(sleep_cycles_config);
 
     oled.home();
     oled.set2X();
 
-    oled.println("Sleep");
-    oled.println("time (s):");
+    oled.println("Tx");
+    oled.println("interval:");
 
-    GetTimeFormattedHMS(buff, sleep_cycles_config);
     oled.clearToEOL();
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%dm%02ds", tdata.s);    
     oled.println(buff);
 }
 
-void OledUpdateTimeoutToSleep()
+void OledConfigTimeoutToSleep()
 {
     char buff[17];
+    TimeHMS tdata = SecondsToHMS(timeout_to_sleep_config);
 
     oled.home();
     oled.set2X();
@@ -809,8 +798,8 @@ void OledUpdateTimeoutToSleep()
     oled.println("Timeout to");
     oled.println("sleep:");
 
-    GetTimeFormattedHMS(buff, timeout_to_sleep_config);
     oled.clearToEOL();
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%d sec", tdata.s);    
     oled.println(buff);
 }
 
@@ -822,51 +811,83 @@ void SampleData()
 
 void TransmitToBase()
 {
-    uint8_t tx_buff[TX_BUFF_LEN];
+    uint8_t tx_buff[TX_BUFF_LEN_MAX];
+    uint8_t idx = 0;
+    
+    tx_buff[idx++] = NODEID; // This works as channel_id
+    
+    /* Field1 in Thingspeak channel */
+    tx_buff[idx++] = lowByte(td.vbat_mv);
+    tx_buff[idx++] = highByte(td.vbat_mv);
 
-#ifdef USE_DEBUG
-    char buff[16];
-    sprintf(buff, "%d:%d:%d:%d", td.heater_status, td.temperature, td.humidity, td.vbat_mv);
-    DEBUGLN(buff);
+    tx_buff[idx++] = lowByte(td.temperature);
+    tx_buff[idx++] = highByte(td.temperature);
+
+    tx_buff[idx++] = lowByte(td.humidity);
+    tx_buff[idx++] = highByte(td.humidity);
+    
+    tx_buff[idx++] = (uint8_t) td.heater_status;
+    tx_buff[idx++] = (uint8_t) 0;
+
+    tx_buff[idx++] = lowByte(td.setpoint);
+    tx_buff[idx++] = highByte(td.setpoint);
+
+    tx_buff[idx++] = lowByte(td.remaining_time_s);
+    tx_buff[idx++] = highByte(td.remaining_time_s);
+      
+    tx_buff[idx++] = (uint8_t) td.mode;
+    tx_buff[idx++] = (uint8_t) 0;
+    
+    tx_buff[idx++] = lowByte(task_time);
+    tx_buff[idx++] = highByte(task_time);
+    
+    unsigned long t0 = micros();
+    
+#if 0
+    radio.sendWithRetry(GATEWAYID, tx_buff, idx);
+#else
+    radio.send(GATEWAYID, tx_buff, idx);
 #endif
-
-    tx_buff[0] = td.temperature & 0x00FF;
-    tx_buff[1] = (td.temperature >> 8);
-
-    tx_buff[2] = td.humidity & 0x00FF;
-    tx_buff[3] = (td.humidity >> 8);
-
-    tx_buff[4] = td.setpoint & 0x00FF;
-    tx_buff[5] = (td.setpoint >> 8);
-
-    tx_buff[6] = td.vbat_mv & 0x00FF;
-    tx_buff[7] = (td.vbat_mv >> 8);
-
-    tx_buff[8] = (uint8_t) td.mode;
-    tx_buff[9] = (uint8_t) td.heater_status;
-
-    tx_buff[10] = td.remaining_time_s & 0x00FF;
-    tx_buff[11] = (td.remaining_time_s >> 8);
-
-    // radio.sendWithRetry(GATEWAYID, tx_buff, TX_BUFF_LEN, 2, 40);
-    radio.send(GATEWAYID, tx_buff, TX_BUFF_LEN);
+    
+    DEBUGVAL("idx=", idx);
+    DEBUGVAL("tx_time_us=", micros()-t0);
 }
 
 void GoToSleep()
 {
-    FlashSleep();
-    radio.sleep();
+    if (wake_up_cause == INT_EXT) {
+        FlashSleep();
+        radio.sleep();
 
-    DISABLE_OLED_VCC;
-    DISABLE_RTC_VCC;
+        DISABLE_OLED_VCC;
+        DISABLE_RTC_VCC;
 
-    digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
-    digitalWrite(SCL, LOW);
-    pinMode(DHT_PIN, INPUT_PULLUP);
+        digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
+        digitalWrite(SCL, LOW);
+        pinMode(DHT_PIN, INPUT_PULLUP);
 
-    wake_up_cause = CYCLIC;
-
+        wake_up_cause = CYCLIC;
+    }
+    
     attachInterrupt(digitalPinToInterrupt(BUTTON_CTRL), RsiButtonCtrl, LOW);
+    
+    /* TODO Refactor the task_time data and routines */
+    /* Compute task times */
+    if(remaining_sleep_cycles == sleep_cycles_config) {
+        task_time = micros() - init_time;
+        periodic_sleep_samples = 0;
+        periodic_sleep_time = 0;
+    }
+    else {
+        periodic_sleep_samples++;
+        periodic_sleep_time += micros() - init_time;
+    }
+    
+#ifdef USE_DEBUG
+    /* To allow DEBUG msgs to finish Tx */
+    delay(50);
+#endif
+    
     // Enter power down state with ADC and BOD module disabled.
     // Wake up when wake up pin is low.
     LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
@@ -892,7 +913,7 @@ void GoToSleep()
     }
 }
 
-HeaterStatus ReadRelayFeedback()
+HeaterStatus ReadHeaterStatus()
 {
     /* Note the !. It is a negated signal */
     return (HeaterStatus)!digitalRead(RELAY_FEEDBACK);
@@ -1010,6 +1031,17 @@ void ReadAndDebouncePushbutton()
     }
 }
 
+TimeHMS SecondsToHMS(uint16_t seconds)
+{
+    TimeHMS time_data = {0,0,0};
+    
+    time_data.h = seconds / 3600;
+    time_data.m = (seconds % 3600) / 60;
+    time_data.s = (seconds % 3600) % 60;
+    
+    return time_data;
+}
+
 void ResetTimerToSleep()
 {
     timer_to_sleep = millis() + (timeout_to_sleep_config * 1000);
@@ -1023,7 +1055,7 @@ void InitRadio()
     radio.encrypt(ENCRYPTKEY);
     radio.sleep();
 
-    DEBUGLN("InitRadio OK.");
+    DEBUGLN("OK");
 #endif
 }
 
@@ -1032,10 +1064,10 @@ void InitFlash()
 #ifdef WITH_SPIFLASH
     if (flash.initialize()) {
         flash_is_awake = true;
-        DEBUGLN("InitFlash OK.");
+        DEBUGLN("OK");
     }
     else {
-        DEBUGLN("InitFlash ERROR.");
+        DEBUGLN("ERROR");
     }
     FlashSleep();
 #endif
@@ -1070,10 +1102,10 @@ void InitOled()
     delay(500);
 
     oled.begin(&Adafruit128x64, OLED_I2C_ADDR);
-    oled.setFont(Stang5x7);
+    oled.setFont(System5x7);
     oled.clear();
 
-    DEBUGLN("InitOled OK.");
+    DEBUGLN("OK");
 #endif
 }
 
@@ -1094,6 +1126,5 @@ void InitRTC()
         /* Nothing */
     }
 
-    DEBUG("InitRTC OK. Unixtime: ");
-    DEBUGLN(rtc.now().unixtime());
+    DEBUGVAL("InitRTC OK. Unixtime: ", rtc.now().unixtime());
 }

@@ -32,7 +32,7 @@ enum {
     DHT_PIN,
     OLED_VCC,
     FLASH_SS,
-    INFO_LED,
+    INFO_LED, /* BUILT-IN LED */
     D10_RESERVED_RADIO,
     D11_RESERVED_RADIO, /* MOSI */
     D12_RESERVED_RADIO, /* MISO */
@@ -65,10 +65,18 @@ enum {
 
 #if defined(USE_DEBUG)
 #define DEBUG(str)   Serial.print(str)
-#define DEBUGLN(str) Serial.println(str)
+#define DEBUGVAL(str, val) \
+        Serial.print(__func__); \
+        Serial.print("["); Serial.print(__LINE__); Serial.print("] "); \
+        Serial.print(str); Serial.println(val); 
+#define DEBUGLN(str) \
+        Serial.print(__func__); \
+        Serial.print("["); Serial.print(__LINE__); Serial.print("] "); \
+        Serial.println(str)
 #else
 #define DEBUG(str)
 #define DEBUGLN(str)
+#define DEBUGVAL(str, val)
 #endif
 
 #endif //THERMOSTAT_H
