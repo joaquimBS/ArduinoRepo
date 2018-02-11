@@ -783,7 +783,7 @@ void OledConfigSleepTime()
     oled.println("interval:");
 
     oled.clearToEOL();
-    snprintf(buff, OLED_LINE_SIZE_MAX, "%dm%02ds", tdata.s);    
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%dm%02ds", tdata.m, tdata.s);    
     oled.println(buff);
 }
 
