@@ -1,5 +1,4 @@
 PIO=pio
-CFLAGS=-I.piolibdeps
 
 all:
 	$(PIO) run
@@ -12,4 +11,3 @@ clean:
 	
 monitor:
 	$(PIO) device monitor
-
