@@ -352,11 +352,16 @@ void ClickTimeToOff(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         if(pb_id == BUTTON_DOWN) {
-            if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
-                td.remaining_time_s -= TIME_INCREMENT_1800_S;
+            if (td.remaining_time_s != TIMER_DISABLED) {
+                if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
+                    td.remaining_time_s -= TIME_INCREMENT_1800_S;
+                }
+                else {
+                    td.remaining_time_s = TIMER_DISABLED;
+                }
             }
             else {
-                td.remaining_time_s = TIME_ZERO;
+                /* Nothing */
             }
         }
         else if(pb_id == BUTTON_UP) {
@@ -388,11 +393,16 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         if(pb_id == BUTTON_DOWN) {
-            if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
-                td.remaining_time_s -= TIME_INCREMENT_1800_S;
+            if (td.remaining_time_s != TIMER_DISABLED) {
+                if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
+                    td.remaining_time_s -= TIME_INCREMENT_1800_S;
+                }
+                else {
+                    td.remaining_time_s = TIMER_DISABLED;
+                }
             }
             else {
-                td.remaining_time_s = TIME_ZERO;
+                /* Nothing */
             }
         }
         else if(pb_id == BUTTON_UP) {
@@ -435,7 +445,7 @@ void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
             if (td.setpoint == TEMP_SETPOINT_OFF) {
                 td.setpoint = TEMP_SETPOINT_MIN;
             }
-            else if (td.setpoint > TEMP_SETPOINT_MAX) {
+            else if (td.setpoint >= TEMP_SETPOINT_MAX) {
                 td.setpoint = TEMP_SETPOINT_MAX;
             }
             else {
