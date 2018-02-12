@@ -8,6 +8,7 @@
 
 // #include "MemoryFree.h"
 #include "DHT.h"        // https://github.com/adafruit/DHT-sensor-library/archive/1.3.0.zip
+#include "dht22.h"      // DHTlib.zip
 #include "LowPower.h"   // https://github.com/rocketscream/Low-Power/archive/V1.6.zip
 #include "RTClib.h"     // https://github.com/adafruit/RTClib/archive/1.2.0.zip
 
@@ -56,7 +57,8 @@ boolean flash_is_awake = false;
 #define ENABLE_RTC_VCC  digitalWrite(RTC_VCC, HIGH)
 #define DISABLE_RTC_VCC digitalWrite(RTC_VCC, LOW)
 
-DHT dht(DHT_PIN, DHT22);
+DHT dht22(DHT_PIN, DHT22);
+dht myDHT;
 RTC_DS1307 rtc;
 
 #define SHORT_CLICK_TIME_MS 80
@@ -318,7 +320,7 @@ void setup()
     InitOled();
 //    InitRTC();
     
-    dht.begin();
+    dht22.begin();
 
     LED_OFF;
     
@@ -572,9 +574,11 @@ void HeaterOFF()
 }
 
 //-------------- Thermostat Logic Section --------------
-
+static int mode = 0;    // temporal variable to check temp reading method
 void ThermoLogicTimeToOff()
 {
+    mode = 0;
+
     if (td.remaining_time_s == TIMER_DISABLED ||
         (td.remaining_time_s == TIME_ZERO)) {
         HeaterOFF();
@@ -587,6 +591,8 @@ void ThermoLogicTimeToOff()
 
 void ThermoLogicTimeToOn()
 {
+    mode = 0;
+    
     if (td.remaining_time_s == TIME_ZERO) {
         HeaterON();
 
@@ -602,6 +608,8 @@ void ThermoLogicTimeToOn()
 
 void ThermoLogicTempSetpoint()
 {
+    mode = 1;
+
     uint16_t hysteresis_hi = td.setpoint;
     uint16_t hysteresis_lo = td.setpoint;
 
@@ -722,7 +730,7 @@ void OledStateTimeToOff()
     oled.println("durant");
 
     oled.clearToEOL();
-    snprintf(buff, OLED_LINE_SIZE_MAX, "%d:%02d h", tdata.h, tdata.m);    
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%d:%02d h", tdata.h, tdata.m);
     oled.println(td.remaining_time_s == TIMER_DISABLED ? STOP_STR : buff);
     
     snprintf(buff, OLED_LINE_SIZE_MAX, "%sC  %s%%", String((td.temperature / 10.0), 1).c_str(),
@@ -949,12 +957,30 @@ uint16_t ReadVbatMv()
 
 void ReadTempData()
 {
-    /* To avoid use of floats, multiply values by 10 and use 'de */
-    td.temperature = dht.readTemperature(false, true) * 10;
-    td.humidity = dht.readHumidity() * 10;
+    /* mode 1 = TimeToOff */
+    if(mode == 1){
+        /* To avoid use of floats, multiply values by 10 and use 'de */
+        td.temperature = dht22.readTemperature(false, true) * 10;
+        td.humidity = dht22.readHumidity() * 10;
+    }
+    else {
+        int chk = myDHT.read22(DHT_PIN);
+        
+        while(chk != DHTLIB_OK) {
+            delay(2000);
+            chk = myDHT.read22(DHT_PIN);
+        }
+        
+        DEBUGVAL("chk=", chk);
+        
+        td.temperature = myDHT.temperature * 10;
+        td.humidity = myDHT.humidity * 10;
+    }
     
-    DEBUG("temp:"); DEBUGLN(td.temperature);
-    DEBUG("hum:"); DEBUGLN(td.humidity);
+    delay(250);
+    
+    DEBUGVAL("temp=", td.temperature);
+    DEBUGVAL("hum=", td.humidity);
 }
 
 /*
