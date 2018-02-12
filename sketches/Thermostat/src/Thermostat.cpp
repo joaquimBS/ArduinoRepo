@@ -528,6 +528,8 @@ void HeaterON()
 #ifdef USE_DEBUG
         //    LED_ON;
 #endif
+        td.heater_status = HEATER_ON;
+        
         digitalWrite(RELAY_MINUS, LOW);
         digitalWrite(RELAY_PLUS, HIGH);
 
@@ -547,6 +549,8 @@ void HeaterOFF()
 #ifdef USE_DEBUG
     //    LED_OFF;
 #endif
+        td.heater_status = HEATER_OFF;
+
         digitalWrite(RELAY_MINUS, HIGH);
         digitalWrite(RELAY_PLUS, LOW);
 
@@ -620,9 +624,6 @@ void DuringPowerSave()
         
         remaining_sleep_cycles = sleep_cycles_config;
 
-        /* Once in a while, we keep track of the real heater status */
-        td.heater_status = ReadHeaterStatus();
-        
         SampleData();
         state_current->thermo_logic();
         TransmitToBase();
@@ -855,19 +856,18 @@ void TransmitToBase()
 
 void GoToSleep()
 {
-    if (wake_up_cause == INT_EXT) {
-        FlashSleep();
-        radio.sleep();
+    radio.sleep();
+    FlashSleep();
+    
+    DISABLE_OLED_VCC;
+    DISABLE_RTC_VCC;
 
-        DISABLE_OLED_VCC;
-        DISABLE_RTC_VCC;
+    digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
+    digitalWrite(SCL, LOW);
+    pinMode(DHT_PIN, INPUT_PULLUP);
+    digitalWrite(RELAY_FEEDBACK, LOW);
 
-        digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
-        digitalWrite(SCL, LOW);
-        pinMode(DHT_PIN, INPUT_PULLUP);
-
-        wake_up_cause = CYCLIC;
-    }
+    wake_up_cause = CYCLIC;
     
     attachInterrupt(digitalPinToInterrupt(BUTTON_CTRL), RsiButtonCtrl, LOW);
     
