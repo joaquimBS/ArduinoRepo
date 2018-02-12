@@ -99,11 +99,11 @@ RTC_DS1307 rtc;
 #define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)1800)
 #define MAX_ON_AFTER_TIME_TO_ON_S ((unsigned int)3*3600)
 
-#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)10)
+#define DEFAULT_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MIN_TIMEOUT_TO_SLEEP_S ((unsigned int)5)
 #define MAX_TIMEOUT_TO_SLEEP_S ((unsigned int)30)
 
-#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)60)
+#define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #endif
 
 #define MIN_CYCLES_OF_SLEEP_S ((unsigned int)20)
@@ -111,7 +111,7 @@ RTC_DS1307 rtc;
 
 #define TEMP_HYSTERESIS_RANGE 10   // remember 0.1C resolution
 #define TEMP_SETPOINT_INC 5
-#define TEMP_SETPOINT_MAX 220
+#define TEMP_SETPOINT_MAX 230
 #define TEMP_SETPOINT_MIN 150
 #define TEMP_SETPOINT_OFF 0
 
@@ -297,7 +297,7 @@ void InitIOPins()
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_PLUS, OUTPUT);
     pinMode(RELAY_MINUS, OUTPUT);
-    pinMode(RELAY_FEEDBACK, INPUT_PULLUP);
+    pinMode(RELAY_FEEDBACK, OUTPUT);
 }
 
 void setup()
