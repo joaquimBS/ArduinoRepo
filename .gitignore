@@ -1,1 +1,6 @@
 *.map
+sketches/RemoteProbe/Base/nbproject/
+.s#*
+*.s#1
+*.s#2
+*.s#3
