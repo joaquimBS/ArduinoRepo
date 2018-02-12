@@ -849,8 +849,8 @@ void TransmitToBase()
     tx_buff[idx++] = (uint8_t) td.mode;
     tx_buff[idx++] = (uint8_t) 0;
     
-    tx_buff[idx++] = lowByte(task_time);
-    tx_buff[idx++] = highByte(task_time);
+    tx_buff[idx++] = lowByte(task_time/1000);
+    tx_buff[idx++] = highByte(task_time/1000);
     
     unsigned long t0 = micros();
     
