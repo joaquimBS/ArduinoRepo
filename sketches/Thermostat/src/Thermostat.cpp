@@ -112,7 +112,7 @@ RTC_DS1307 rtc;
 #define MAX_CYCLES_OF_SLEEP_S ((unsigned int)5*60)
 
 #define TEMP_HYSTERESIS_RANGE 10   // remember 0.1C resolution
-#define TEMP_SETPOINT_INC 5
+#define TEMP_SETPOINT_INC 1
 #define TEMP_SETPOINT_MAX 230
 #define TEMP_SETPOINT_MIN 150
 #define TEMP_SETPOINT_OFF 0
