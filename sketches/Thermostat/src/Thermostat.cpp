@@ -148,8 +148,9 @@ typedef enum
 
 typedef enum
 {
-    INT_EXT = 0,
-    CYCLIC = 1
+    SLEEP_TICK = 0,
+    PERIODIC_TASK,
+    PUSHBUTTON
 } WakeUpCause;
 
 typedef enum
@@ -242,7 +243,7 @@ void ClickTimoutToSleep(uint8_t, PushButtonState);
 ThermostatData td = {HEATER_OFF, THERMO_STATE_TTOFF, POWER_ON, 0, 0, 0, 0, 0};
 
 /* IMPORTANT to keep wake_up_cause init value to INT_EXT */
-volatile WakeUpCause wake_up_cause = INT_EXT;
+volatile WakeUpCause wake_up_cause = PUSHBUTTON;
 
 ThermoStateFunctions thermo_state_time_to_off{
     ThermoLogicTimeToOff,
@@ -283,19 +284,22 @@ ThermoStateFunctions thermo_state_array[THERMO_STATE_MAX] {
 ThermoStateFunctions *state_current = &thermo_state_array[THERMO_STATE_TTOFF];
 ThermoStateFunctions *state_current_saved = (ThermoStateFunctions*) NULL_PTR;
 
-long long timer_to_sleep = 0;
+uint64_t timer_to_sleep = 0;
 uint16_t remaining_sleep_cycles = 0;
 
 /* Thermostat configuration (maybe a struct) */
 uint16_t on_after_time_to_on_config = DEFAULT_ON_AFTER_TIME_TO_ON_S;
 uint16_t sleep_cycles_config = DEFAULT_CYCLES_OF_SLEEP_S;
 uint16_t timeout_to_sleep_config = DEFAULT_TIMEOUT_TO_SLEEP_S;
+
+uint64_t sleep_task_init_time = 0;
+uint32_t sleep_task_time = 0;
 // ========================== End of Header ================================= //
 
 /* -------------------------------- Routines -------------------------------- */
 void RsiButtonCtrl()
 {
-    wake_up_cause = INT_EXT;
+    wake_up_cause = PUSHBUTTON;
 }
 
 void InitIOPins()
@@ -350,6 +354,28 @@ void setup()
 
     /* Initial safe condition of the heater */
     HeaterOFF();
+}
+
+void DecreaseRemainingTimeTask()
+{
+    if ((td.remaining_time_s != TIMER_DISABLED) && (td.remaining_time_s > TIME_ZERO)) {
+        td.remaining_time_s--;
+
+        if (td.remaining_time_s == TIME_ZERO) {
+            /* This is a shortcut to react sooner. */
+            remaining_sleep_cycles = 0;
+        }
+        else {
+            /* Nothing */
+        }
+    }
+
+    if (remaining_sleep_cycles > 0) {
+        remaining_sleep_cycles--;
+    }
+    else {
+        wake_up_cause = PERIODIC_TASK;
+    }
 }
 
 void loop()
@@ -641,43 +667,13 @@ void ThermoLogicTempSetpoint()
 }
 //------------------------------------------------------
 /* TODO Refactor the task_time data and routines */
-static unsigned long init_time = 0;
-static uint32_t task_time = 0;
-static uint32_t periodic_sleep_time = 0;
-static uint8_t periodic_sleep_samples = 0;
 void DuringPowerSave()
 {
-    init_time = micros();
-    if (remaining_sleep_cycles == 0) {
-        DEBUGVAL("periodic_sleep_time_us=", periodic_sleep_time/periodic_sleep_samples);
-        DEBUGVAL("task_time_us=", task_time);
-        
-        remaining_sleep_cycles = sleep_cycles_config;
+    sleep_task_init_time = micros();
 
-        SampleData();
-        state_current->thermo_logic();
-        TransmitToBase();
-    }
-    else {
-        if ((td.remaining_time_s != TIMER_DISABLED) && (td.remaining_time_s > TIME_ZERO)) {
-            td.remaining_time_s--;
-
-            if (td.remaining_time_s == TIME_ZERO) {
-                /* This is a shortcut to react sooner. */
-                remaining_sleep_cycles = 0;
-            }
-            else {
-                /* Nothing */
-            }
-        }
-
-        if (remaining_sleep_cycles != 0) {
-            remaining_sleep_cycles--;
-        }
-        else {
-            /* Nothing */
-        }
-    }
+    SampleData();
+    state_current->thermo_logic();
+    TransmitToBase();
     
     GoToSleep();
 }
@@ -708,9 +704,7 @@ void DuringPowerON()
             /* Nothing */
         }
 
-        state_current->thermo_logic();
-        TransmitToBase();
-        remaining_sleep_cycles = sleep_cycles_config;
+        /* Switch the device to power saving mode */
         td.power_mode = POWER_SAVE;
     }
 }
@@ -926,49 +920,39 @@ void GoToSleep()
     DISABLE_OLED_VCC;
     DISABLE_RTC_VCC;
 
-    digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep.
+    digitalWrite(SDA, LOW);  // To minimize I2C current consumption during sleep
     digitalWrite(SCL, LOW);
     pinMode(DHT_PIN, INPUT_PULLUP);
     digitalWrite(RELAY_FEEDBACK, LOW);
 
-    wake_up_cause = CYCLIC;
+    wake_up_cause = SLEEP_TICK;
+    remaining_sleep_cycles = sleep_cycles_config;
     
     attachInterrupt(digitalPinToInterrupt(BUTTON_CTRL), RsiButtonCtrl, LOW);
     
-    /* TODO Refactor the task_time data and routines */
-    /* Compute task times */
-    if(remaining_sleep_cycles == sleep_cycles_config) {
-        task_time = micros() - init_time;
-        periodic_sleep_samples = 0;
-        periodic_sleep_time = 0;
-    }
-    else {
-        periodic_sleep_samples++;
-        periodic_sleep_time += micros() - init_time;
-    }
+    sleep_task_time = micros() - sleep_task_init_time;
+    DEBUGVAL("sleep_task_time=", sleep_task_time);
     
 #ifdef USE_DEBUG
-    /* To allow DEBUG msgs to finish Tx */
+    /* To allow DEBUG traces to finish Tx */
     delay(50);
 #endif
     
     // Enter power down state with ADC and BOD module disabled.
     // Wake up when wake up pin is low.
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-//        delay(1000);
-    /* ZZzzZZzzZZzz */
+    while(wake_up_cause == SLEEP_TICK) {
+        DecreaseRemainingTimeTask();
+        LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+        /* ZZzzZZzzZZzz */
+    }
 
-    // Disable external pin interrupt on wake up pin.
-    detachInterrupt(digitalPinToInterrupt(BUTTON_CTRL));
-
-    if (wake_up_cause == INT_EXT) {
-        DEBUGLN("INT_EXT");
+    if (wake_up_cause == PUSHBUTTON) {
+        detachInterrupt(digitalPinToInterrupt(BUTTON_CTRL));
 
         ResetTimerToSleep();
         td.power_mode = POWER_ON;
 
         Wire.begin();
-
         InitOled();
 //        InitRTC();
 //        FlashWakeup();
