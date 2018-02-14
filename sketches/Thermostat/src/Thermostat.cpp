@@ -315,7 +315,7 @@ void InitIOPins()
     pinMode(INFO_LED, OUTPUT);
     pinMode(RELAY_PLUS, OUTPUT);
     pinMode(RELAY_MINUS, OUTPUT);
-    pinMode(RELAY_FEEDBACK, OUTPUT);
+    pinMode(RELAY_FEEDBACK, INPUT_PULLUP);
 }
 
 void setup()
@@ -697,6 +697,7 @@ void DuringPowerON()
         /* encapsular a una funcio */
 
         if (state_current_saved != NULL_PTR) {
+            /* Restore the saved Thermo State */
             state_current = state_current_saved;
             state_current_saved = (ThermoStateFunctions*) NULL_PTR;
         }
@@ -728,7 +729,7 @@ void OledEngineeringMode()
     
     snprintf(buff, OLED_LINE_SIZE_MAX, "%d mV", ReadVbatMv());
     oled.println(buff);
-    snprintf(buff, OLED_LINE_SIZE_MAX, "%lu us", task_time);
+    snprintf(buff, OLED_LINE_SIZE_MAX, "%lu us", sleep_task_time);
     oled.println(buff);
 }
 
@@ -892,8 +893,8 @@ void TransmitToBase()
     tx_buff[idx++] = (uint8_t) td.mode;
     tx_buff[idx++] = (uint8_t) 0;
     
-    tx_buff[idx++] = lowByte(task_time/1000);
-    tx_buff[idx++] = highByte(task_time/1000);
+    tx_buff[idx++] = lowByte(sleep_task_time/1000);
+    tx_buff[idx++] = highByte(sleep_task_time/1000);
     
 #if 1
     if(true == radio.sendWithRetry(GATEWAYID, tx_buff, idx)) {
