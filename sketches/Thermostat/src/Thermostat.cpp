@@ -89,13 +89,13 @@ RTC_DS1307 rtc;
 
 #define DEFAULT_CYCLES_OF_SLEEP_S ((unsigned int)20)
 #else
-#define TIME_INCREMENT_1800_S ((unsigned int)1801)
-#define TIME_INCREMENT_900_S ((unsigned int)901)
+#define TIME_INCREMENT_1800_S ((unsigned int)1800)
+#define TIME_INCREMENT_900_S ((unsigned int)900)
 #define TIME_INCREMENT_20_S ((unsigned int)20)
 #define TIME_INCREMENT_5_S ((unsigned int)5)
 
-#define MAX_TIME_TO_OFF_S ((unsigned int)4*3601)
-#define MAX_TIME_TO_ON_S ((unsigned int)12*3601)
+#define MAX_TIME_TO_OFF_S ((unsigned int)4*3600)
+#define MAX_TIME_TO_ON_S ((unsigned int)12*3600)
 
 #define DEFAULT_ON_AFTER_TIME_TO_ON_S ((unsigned int)3600)
 #define MIN_ON_AFTER_TIME_TO_ON_S ((unsigned int)1800)
@@ -434,8 +434,8 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         if(pb_id == BUTTON_DOWN) {
             if (td.remaining_time_s != TIMER_DISABLED) {
-                if (td.remaining_time_s > TIME_INCREMENT_1800_S) {
-                    td.remaining_time_s -= TIME_INCREMENT_1800_S;
+                if (td.remaining_time_s > TIME_INCREMENT_900_S) {
+                    td.remaining_time_s -= TIME_INCREMENT_900_S;
                 }
                 else {
                     td.remaining_time_s = TIMER_DISABLED;
@@ -446,7 +446,7 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
             }
         }
         else if(pb_id == BUTTON_UP) {
-            td.remaining_time_s += TIME_INCREMENT_1800_S;
+            td.remaining_time_s += TIME_INCREMENT_900_S;
             if (td.remaining_time_s > MAX_TIME_TO_ON_S) {
                 td.remaining_time_s = MAX_TIME_TO_ON_S;
             }
