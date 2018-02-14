@@ -120,6 +120,10 @@ RTC_DS1307 rtc;
 #define STOP_STR ((const char*)"STOP")
 #define OLED_LINE_SIZE_MAX 16
 
+#define TIMER1_PERIOD 1000u
+
+#define NEW_REQUEST '1'
+
 /*------------------------------ Data Types ---------------------------------*/
 typedef enum
 {
@@ -129,12 +133,6 @@ typedef enum
     PB_LONG_CLICK_CONFIRMED,
     PB_VERYLONG_CLICK_CONFIRMED
 } PushButtonState;
-
-typedef enum
-{
-    MODE_TIME = 0,
-    MODE_TEMP
-} ThermostatMode;
 
 typedef enum
 {
@@ -154,13 +152,21 @@ typedef enum
     CYCLIC = 1
 } WakeUpCause;
 
+typedef enum
+{
+    THERMO_STATE_TTOFF = (uint8_t)0,
+    THERMO_STATE_TTON,
+    THERMO_STATE_SETPOINT,
+    THERMO_STATE_MAX
+} ThermostatModeId;
+
 typedef void (*VoidCallback)(void);
 typedef void (*ClickCallback)(uint8_t, PushButtonState);
 
 typedef struct
 {
     HeaterStatus heater_status;
-    ThermostatMode mode;
+    ThermostatModeId mode;
     ThermostatPowerMode power_mode;
     uint16_t remaining_time_s;
     uint16_t humidity;
@@ -203,7 +209,7 @@ void ReadAndDebouncePushbutton();
 void ResetTimerToSleep();
 void HeaterON();
 void HeaterOFF();
-void SetThermoState(ThermoStateFunctions *new_state);
+void SetThermoState(ThermostatModeId new_mode_id);
 TimeHMS SecondsToHMS(uint16_t seconds);
 
 void DuringPowerON();
@@ -233,7 +239,7 @@ void OledConfigTimeoutToSleep();
 void ClickTimoutToSleep(uint8_t, PushButtonState);
 
 /* ---------------------------- Global Variables ---------------------------- */
-ThermostatData td = {HEATER_OFF, MODE_TIME, POWER_ON, 0, 0, 0, 0, 0};
+ThermostatData td = {HEATER_OFF, THERMO_STATE_TTOFF, POWER_ON, 0, 0, 0, 0, 0};
 
 /* IMPORTANT to keep wake_up_cause init value to INT_EXT */
 volatile WakeUpCause wake_up_cause = INT_EXT;
@@ -267,8 +273,14 @@ ThermoStateFunctions config_state_timeout_to_sleep{
     NULL_PTR,
     OledConfigTimeoutToSleep,
     ClickTimoutToSleep};
+    
+ThermoStateFunctions thermo_state_array[THERMO_STATE_MAX] {
+    thermo_state_time_to_off,
+    thermo_state_time_to_on,
+    thermo_state_temp_setpoint
+};
 
-ThermoStateFunctions *state_current = &thermo_state_time_to_off;
+ThermoStateFunctions *state_current = &thermo_state_array[THERMO_STATE_TTOFF];
 ThermoStateFunctions *state_current_saved = (ThermoStateFunctions*) NULL_PTR;
 
 long long timer_to_sleep = 0;
@@ -331,7 +343,7 @@ void setup()
     td.setpoint = (int) (td.temperature / 10)*10;
     td.remaining_time_s = TIMER_DISABLED;
     td.heater_status = ReadHeaterStatus();
-    SetThermoState(&thermo_state_time_to_off);
+    SetThermoState(THERMO_STATE_TTOFF);
     state_current->oled_update();
     
     ResetTimerToSleep();
@@ -374,7 +386,7 @@ void ClickTimeToOff(uint8_t pb_id, PushButtonState click_type)
         }
         else if(pb_id == BUTTON_CTRL) {
             oled.clear();
-            SetThermoState(&thermo_state_time_to_on);
+            SetThermoState(THERMO_STATE_TTON);
         }
         else {
             /* Nothing */
@@ -415,7 +427,7 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
         }
         else if(pb_id == BUTTON_CTRL) {
             oled.clear();
-            SetThermoState(&thermo_state_temp_setpoint);
+            SetThermoState(THERMO_STATE_SETPOINT);
         }
         else {
             /* Nothing */
@@ -456,7 +468,7 @@ void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
         }
         else if(pb_id == BUTTON_CTRL) {
             oled.clear();
-            SetThermoState(&thermo_state_time_to_off);
+            SetThermoState(THERMO_STATE_TTOFF);
         }
         else {
             /* Nothing */
@@ -598,7 +610,7 @@ void ThermoLogicTimeToOn()
 
         /* The following code is used to turn OFF the heater 
          * at some point. If not used, heater would be ON forever! */
-        SetThermoState(&thermo_state_time_to_off);
+        SetThermoState(THERMO_STATE_TTOFF);
         td.remaining_time_s = on_after_time_to_on_config;
     }
     else {
@@ -647,17 +659,24 @@ void DuringPowerSave()
         TransmitToBase();
     }
     else {
-        if ((td.remaining_time_s != TIMER_DISABLED) &&
-            (td.remaining_time_s > TIME_ZERO)) {
+        if ((td.remaining_time_s != TIMER_DISABLED) && (td.remaining_time_s > TIME_ZERO)) {
             td.remaining_time_s--;
 
             if (td.remaining_time_s == TIME_ZERO) {
+                /* This is a shortcut to react sooner. */
                 remaining_sleep_cycles = 0;
+            }
+            else {
+                /* Nothing */
             }
         }
 
-        if (remaining_sleep_cycles != 0)
+        if (remaining_sleep_cycles != 0) {
             remaining_sleep_cycles--;
+        }
+        else {
+            /* Nothing */
+        }
     }
     
     GoToSleep();
@@ -665,18 +684,15 @@ void DuringPowerSave()
 
 void DuringPowerON()
 {
-    static long long timer_1s = millis() + 1000;
+    static long long timer1 = millis() + TIMER1_PERIOD;
 
     if (radio.receiveDone()) {
         CheckForWirelessHEX(radio, flash, false);
     }
 
-    if (millis() > timer_1s) {
-        timer_1s = millis() + 1000;
-
-        if ((td.remaining_time_s != TIMER_DISABLED) &&
-            (td.remaining_time_s > TIME_ZERO))
-            td.remaining_time_s--;
+    if (millis() > timer1) {
+        timer1 = millis() + TIMER1_PERIOD;
+        /* TBD */
     }
 
     ReadAndDebouncePushbutton();
@@ -699,10 +715,14 @@ void DuringPowerON()
     }
 }
 
-void SetThermoState(ThermoStateFunctions *new_state)
+void SetThermoState(ThermostatModeId new_mode_id)
 {
-    state_current = new_state;
-    td.remaining_time_s = TIMER_DISABLED;
+    if(new_mode_id < THERMO_STATE_MAX) {
+        td.mode = new_mode_id;
+        td.remaining_time_s = TIMER_DISABLED;
+        
+        state_current = &thermo_state_array[td.mode];
+    }
 }
 
 void OledEngineeringMode()
@@ -828,11 +848,32 @@ void SampleData()
     td.vbat_mv = ReadVbatMv();
 }
 
+void ProcessAckFromBase()
+{
+    /* Attention, this routine may turn the Heater ON or OFF */
+    if((radio.DATALEN >= 4) && (radio.DATA[0] == NEW_REQUEST)) {
+        /* Attention, new command received! */
+        ThermostatModeId new_thermo_mode_id = (ThermostatModeId)radio.DATA[1];
+
+        SetThermoState(new_thermo_mode_id);
+
+        if((THERMO_STATE_TTOFF == new_thermo_mode_id) || (THERMO_STATE_TTON == new_thermo_mode_id)){
+            td.remaining_time_s = ((radio.DATA[2] << 8) + radio.DATA[3]);
+        }
+        else if(THERMO_STATE_SETPOINT == new_thermo_mode_id) {
+            td.setpoint = radio.DATA[3];
+        }
+
+        state_current->thermo_logic();
+    }
+}
+
 void TransmitToBase()
 {
     uint8_t tx_buff[TX_BUFF_LEN_MAX];
     uint8_t idx = 0;
-    
+    uint64_t t0 = micros();
+
     tx_buff[idx++] = NODEID; // This works as channel_id
     
     /* Field1 in Thingspeak channel */
@@ -860,16 +901,21 @@ void TransmitToBase()
     tx_buff[idx++] = lowByte(task_time/1000);
     tx_buff[idx++] = highByte(task_time/1000);
     
-    unsigned long t0 = micros();
-    
-#if 0
-    radio.sendWithRetry(GATEWAYID, tx_buff, idx);
+#if 1
+    if(true == radio.sendWithRetry(GATEWAYID, tx_buff, idx)) {
+        /* Attention, the following routine can turn ON or OFF the heater */
+        ProcessAckFromBase();
+    }
+    else {
+        DEBUGLN("No ACK");
+    }
 #else
     radio.send(GATEWAYID, tx_buff, idx);
 #endif
     
     DEBUGVAL("idx=", idx);
     DEBUGVAL("tx_time_us=", micros()-t0);
+    (void)t0; // To mute a warning
 }
 
 void GoToSleep()
