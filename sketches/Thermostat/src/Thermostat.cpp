@@ -917,10 +917,10 @@ void TransmitToBase()
     tx_buff[idx++] = (uint8_t) td.mode;
     tx_buff[idx++] = (uint8_t) 0;
     
-    tx_buff[idx++] = lowByte(sleep_task_time/1000);
-    tx_buff[idx++] = highByte(sleep_task_time/1000);
+    tx_buff[idx++] = lowByte(sleep_task_time/100);
+    tx_buff[idx++] = highByte(sleep_task_time/100);
     
-#if 1
+#if 0
     if(true == radio.sendWithRetry(GATEWAYID, tx_buff, idx)) {
         /* Attention, the following routine can turn ON or OFF the heater */
         ProcessAckFromBase();
