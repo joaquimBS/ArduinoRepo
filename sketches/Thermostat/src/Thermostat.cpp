@@ -294,6 +294,8 @@ uint16_t timeout_to_sleep_config = DEFAULT_TIMEOUT_TO_SLEEP_S;
 
 uint64_t sleep_task_init_time = 0;
 uint32_t sleep_task_time = 0;
+
+boolean force_setpoint = false;
 // ========================== End of Header ================================= //
 
 /* -------------------------------- Routines -------------------------------- */
@@ -473,6 +475,8 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
 void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
+        force_setpoint = true;
+        
         if(pb_id == BUTTON_DOWN) {
             if (td.setpoint > TEMP_SETPOINT_MIN) {
                 td.setpoint -= TEMP_SETPOINT_INC;
@@ -650,10 +654,12 @@ void ThermoLogicTempSetpoint()
 
     uint16_t hysteresis_hi = td.setpoint;
     uint16_t hysteresis_lo = td.setpoint;
+    
+    uint16_t hysteresis_range = force_setpoint ? 0 : TEMP_HYSTERESIS_RANGE;
 
     /* This is to implement a TEMP_HYSTERESIS_RANGE hysteresis range. */
-    hysteresis_hi += (TEMP_HYSTERESIS_RANGE / 2); // remember 0.1C resolution.
-    hysteresis_lo -= (TEMP_HYSTERESIS_RANGE / 2); // remember 0.1C resolution.
+    hysteresis_hi += (hysteresis_range / 2); // remember 0.1C resolution.
+    hysteresis_lo -= (hysteresis_range / 2); // remember 0.1C resolution.
 
     if (td.temperature >= hysteresis_hi) {
         HeaterOFF();
@@ -664,6 +670,8 @@ void ThermoLogicTempSetpoint()
     else {
         /* Nothing */
     }
+    
+    force_setpoint = false;
 }
 //------------------------------------------------------
 /* TODO Refactor the task_time data and routines */
