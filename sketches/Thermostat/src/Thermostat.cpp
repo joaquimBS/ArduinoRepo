@@ -220,24 +220,24 @@ void OledEngineeringMode();
 
 void ThermoLogicTimeToOff();
 void OledStateTimeToOff();
-void ClickTimeToOff(uint8_t, PushButtonState);
+void ClickStateTimeToOff(uint8_t, PushButtonState);
 
 void ThermoLogicTimeToOn();
 void OledStateTimeToOn();
-void ClickTimeToOn(uint8_t, PushButtonState);
+void ClickStateTimeToOn(uint8_t, PushButtonState);
 
 void ThermoLogicTempSetpoint();
 void OledStateTempSetpoint();
-void ClickTempSetpoint(uint8_t, PushButtonState);
+void ClickStateTempSetpoint(uint8_t, PushButtonState);
 
 void OledConfigTimeOnAfterTimeToOn();
-void ClickTimeOnAfterTimeToOn(uint8_t, PushButtonState);
+void ClickConfigTimeOnAfterTimeToOn(uint8_t, PushButtonState);
 
 void OledConfigSleepTime();
-void ClickSleepTime(uint8_t, PushButtonState);
+void ClickConfigSleepTime(uint8_t, PushButtonState);
 
 void OledConfigTimeoutToSleep();
-void ClickTimoutToSleep(uint8_t, PushButtonState);
+void ClickConfigTimoutToSleep(uint8_t, PushButtonState);
 
 /* ---------------------------- Global Variables ---------------------------- */
 ThermostatData td = {HEATER_OFF, THERMO_STATE_TTOFF, POWER_ON, 0, 0, 0, 0, 0};
@@ -248,32 +248,32 @@ volatile WakeUpCause wake_up_cause = PUSHBUTTON;
 ThermoStateFunctions thermo_state_time_to_off{
     ThermoLogicTimeToOff,
     OledStateTimeToOff,
-    ClickTimeToOff};
+    ClickStateTimeToOff};
 
 ThermoStateFunctions thermo_state_time_to_on{
     ThermoLogicTimeToOn,
     OledStateTimeToOn,
-    ClickTimeToOn};
+    ClickStateTimeToOn};
 
 ThermoStateFunctions thermo_state_temp_setpoint{
     ThermoLogicTempSetpoint,
     OledStateTempSetpoint,
-    ClickTempSetpoint};
+    ClickStateTempSetpoint};
 
 ThermoStateFunctions config_state_on_after_time_to_on{
     NULL_PTR,
     OledConfigTimeOnAfterTimeToOn,
-    ClickTimeOnAfterTimeToOn};
+    ClickConfigTimeOnAfterTimeToOn};
 
 ThermoStateFunctions config_state_sleep_time_s{
     NULL_PTR,
     OledConfigSleepTime,
-    ClickSleepTime};
+    ClickConfigSleepTime};
 
 ThermoStateFunctions config_state_timeout_to_sleep{
     NULL_PTR,
     OledConfigTimeoutToSleep,
-    ClickTimoutToSleep};
+    ClickConfigTimoutToSleep};
     
 ThermoStateFunctions thermo_state_array[THERMO_STATE_MAX] {
     thermo_state_time_to_off,
@@ -390,7 +390,7 @@ void loop()
     }
 }
 
-void ClickTimeToOff(uint8_t pb_id, PushButtonState click_type)
+void ClickStateTimeToOff(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         if(pb_id == BUTTON_DOWN) {
@@ -439,7 +439,7 @@ void ClickTimeToOff(uint8_t pb_id, PushButtonState click_type)
     }
 }
 
-void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
+void ClickStateTimeToOn(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         if(pb_id == BUTTON_DOWN) {
@@ -488,7 +488,7 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
     }
 }
 
-void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
+void ClickStateTempSetpoint(uint8_t pb_id, PushButtonState click_type)
 {
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
         force_setpoint = true;
@@ -531,7 +531,7 @@ void ClickTempSetpoint(uint8_t pb_id, PushButtonState click_type)
     }
 }
 
-void ClickTimeOnAfterTimeToOn(uint8_t pb_id, PushButtonState click_type)
+void ClickConfigTimeOnAfterTimeToOn(uint8_t pb_id, PushButtonState click_type)
 {
     (void)pb_id;
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
@@ -550,7 +550,7 @@ void ClickTimeOnAfterTimeToOn(uint8_t pb_id, PushButtonState click_type)
     }
 }
 
-void ClickSleepTime(uint8_t pb_id, PushButtonState click_type)
+void ClickConfigSleepTime(uint8_t pb_id, PushButtonState click_type)
 {
     (void)pb_id;
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
@@ -569,7 +569,7 @@ void ClickSleepTime(uint8_t pb_id, PushButtonState click_type)
     }
 }
 
-void ClickTimoutToSleep(uint8_t pb_id, PushButtonState click_type)
+void ClickConfigTimoutToSleep(uint8_t pb_id, PushButtonState click_type)
 {
     (void)pb_id;
     if (click_type == PB_SHORT_CLICK_CONFIRMED) {
