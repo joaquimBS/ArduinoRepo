@@ -407,9 +407,17 @@ void ClickTimeToOff(uint8_t pb_id, PushButtonState click_type)
             }
         }
         else if(pb_id == BUTTON_UP) {
-            td.remaining_time_s += TIME_INCREMENT_1800_S;
-            if (td.remaining_time_s > MAX_TIME_TO_OFF_S) {
-                td.remaining_time_s = MAX_TIME_TO_OFF_S;
+            if(td.remaining_time_s == TIMER_DISABLED) {
+                td.remaining_time_s = TIME_INCREMENT_1800_S;
+            }
+            else {
+                td.remaining_time_s += TIME_INCREMENT_1800_S;
+                if (td.remaining_time_s > MAX_TIME_TO_OFF_S) {
+                    td.remaining_time_s = MAX_TIME_TO_OFF_S;
+                }
+                else {
+                    /* Nothing */
+                }
             }
         }
         else if(pb_id == BUTTON_CTRL) {
@@ -448,9 +456,17 @@ void ClickTimeToOn(uint8_t pb_id, PushButtonState click_type)
             }
         }
         else if(pb_id == BUTTON_UP) {
-            td.remaining_time_s += TIME_INCREMENT_900_S;
-            if (td.remaining_time_s > MAX_TIME_TO_ON_S) {
-                td.remaining_time_s = MAX_TIME_TO_ON_S;
+            if(td.remaining_time_s == TIMER_DISABLED) {
+                td.remaining_time_s = TIME_INCREMENT_900_S;
+            }
+            else {
+                td.remaining_time_s += TIME_INCREMENT_900_S;
+                if (td.remaining_time_s > MAX_TIME_TO_ON_S) {
+                    td.remaining_time_s = MAX_TIME_TO_ON_S;
+                }
+                else {
+                    /* Nothing */
+                }
             }
         }
         else if(pb_id == BUTTON_CTRL) {
