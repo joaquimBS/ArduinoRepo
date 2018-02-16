@@ -8,7 +8,7 @@
 
 // #include "MemoryFree.h"
 #include "DHT.h"        // https://github.com/adafruit/DHT-sensor-library/archive/1.3.0.zip
-#include "dht22.h"      // DHTlib.zip
+#include "dht.h"      // DHTlib.zip
 #include "LowPower.h"   // https://github.com/rocketscream/Low-Power/archive/V1.6.zip
 #include "RTClib.h"     // https://github.com/adafruit/RTClib/archive/1.2.0.zip
 
@@ -322,8 +322,10 @@ void InitIOPins()
 
 void setup()
 {
+#if defined(USE_DEBUG)
     Serial.begin(SERIAL_BR);
     while (!Serial);
+#endif
 
     /* IO Pins need to be initialized prior to other peripherals start */
     InitIOPins();
@@ -933,7 +935,7 @@ void TransmitToBase()
 #endif
     
     DEBUGVAL("idx=", idx);
-    DEBUGVAL("tx_time_us=", micros()-t0);
+    DEBUGVAL("tx_time_us=", uint32_t(micros()-t0));
     (void)t0; // To mute a warning
 }
 

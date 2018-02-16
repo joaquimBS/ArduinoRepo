@@ -64,15 +64,15 @@ enum {
 #define SERIAL_BR 115200
 
 #if defined(USE_DEBUG)
-#define DEBUG(str)   Serial.print(str)
+#define DEBUG(str)   Serial.print(F(str))
 #define DEBUGVAL(str, val) \
         Serial.print(__func__); \
-        Serial.print("["); Serial.print(__LINE__); Serial.print("] "); \
-        Serial.print(str); Serial.println(val); 
+        Serial.print(F("[")); Serial.print(__LINE__); Serial.print(F("] ")); \
+        Serial.print(F(str)); Serial.println(val); 
 #define DEBUGLN(str) \
         Serial.print(__func__); \
-        Serial.print("["); Serial.print(__LINE__); Serial.print("] "); \
-        Serial.println(str)
+        Serial.print(F("[")); Serial.print(__LINE__); Serial.print(F("] ")); \
+        Serial.println(F(str))
 #else
 #define DEBUG(str)
 #define DEBUGLN(str)
