@@ -4,3 +4,5 @@ sketches/RemoteProbe/Base/nbproject/
 *.s#1
 *.s#2
 *.s#3
+
+sketches/Thermostat/\.vscode/
