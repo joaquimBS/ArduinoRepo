@@ -53,11 +53,11 @@ enum {
 #define DEBUG(str)   Serial.print(str)
 #define DEBUGVAL(str, val) \
         Serial.print(__func__); \
-        Serial.print("["); Serial.print(__LINE__); Serial.print("] "); \
+        Serial.print("["); Serial.print(__LINE__); Serial.print("]"); \
         Serial.print(str); Serial.println(val); 
 #define DEBUGLN(str) \
         Serial.print(__func__); \
-        Serial.print("["); Serial.print(__LINE__); Serial.print("] "); \
+        Serial.print("["); Serial.print(__LINE__); Serial.print("]"); \
         Serial.println(str)
 #else
 #define DEBUG(str)
