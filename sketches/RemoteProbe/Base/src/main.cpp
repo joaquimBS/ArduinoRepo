@@ -9,6 +9,9 @@
 #include "LowPower.h"           // https://github.com/rocketscream/Low-Power
 
 /*-------------------------------- Defines -----------------------------------*/
+#define APPNAME_STR "Base"
+#define BUILD_STR "1.0"
+
 #define WITH_RFM69
 // #define WITH_SPIFLASH
 
@@ -150,8 +153,13 @@ void InitIOPins()
 
 void setup()
 {
+#if defined(USE_DEBUG)
     Serial.begin(SERIAL_BR);
     while (!Serial);
+
+    DEBUGVAL("AppName=", APPNAME_STR);
+    DEBUGVAL("AppVersion=", BUILD_STR);
+#endif
 
     InitIOPins();
 

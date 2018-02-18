@@ -46,7 +46,7 @@ enum {
 #define LED_ON      digitalWrite(INFO_LED, HIGH)
 #define LED_OFF     digitalWrite(INFO_LED, LOW)
 
-#define USE_DEBUG
+//#define USE_DEBUG
 #define SERIAL_BR 115200
 
 #if defined(USE_DEBUG)
