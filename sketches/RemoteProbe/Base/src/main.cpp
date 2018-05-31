@@ -168,8 +168,8 @@ void setup()
 
     LED_ON;
     
-    delay(1000);
-    DEBUGLN(Esp8266Reset());
+//    delay(1000);
+//    DEBUGLN(Esp8266Reset());
     
     delay(1000);
     DEBUGLN(Esp8266ConnectToAP(AP_SSID, AP_PWD));
