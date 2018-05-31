@@ -6,17 +6,18 @@
 
 #defines __AVR__ __AVR_ATmega328P__
 
+ENV=uno
 PIO=pio
 
 all:
-	$(PIO) run
+	$(PIO) run --environment $(ENV)
 	
 upload:
-	$(PIO) run --target upload
+	$(PIO) run --environment $(ENV) --target upload
 
 clean:
 	rm -f firmware.map
-	$(PIO) run --target clean
+	$(PIO) run --environment $(ENV) --target clean
 	
 monitor:
 	$(PIO) device monitor -b 115200
