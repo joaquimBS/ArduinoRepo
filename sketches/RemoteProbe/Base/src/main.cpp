@@ -298,17 +298,17 @@ AtResult GetLastFieldFromChannel(String channel_n, uint16_t field_n, uint16_t* r
 
         if(ReadUntilOkOrError(&esp8266) == AT_OK) {
             /* 3. Send the GET string */
-            esp8266.print(get_str);
+            esp8266.print(get_str.c_str());
 //            DEBUGLN(get_str);
             delay(5);
 
             /* 4. Send the host string */
-            esp8266.print(host_str);
+            esp8266.print(host_str.c_str());
 //            DEBUGLN(host_str);
             delay(5);
 
             /* 5. Send the close string */
-            esp8266.print(close_str);
+            esp8266.print(close_str.c_str());
 //            DEBUGLN(close_str);
 
             String myline = "";
@@ -544,13 +544,13 @@ void UploadDataToThingspeak()
                 delay(5);
 
                 /* 4. Send the host string */
-                esp8266.print(host_str);
-                DEBUGLN(host_str);
+                esp8266.print(host_str.c_str());
+                DEBUGLN(host_str.c_str());
                 delay(5);
 
                 /* 5. Send the close string */
-                esp8266.print(close_str);
-                DEBUGLN(close_str);
+                esp8266.print(close_str.c_str());
+                DEBUGLN(close_str.c_str());
                 
                 String dummy;
                 ReadLinesUntilToken(&esp8266, "+IPD", &dummy);
