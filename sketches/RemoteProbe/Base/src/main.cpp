@@ -525,6 +525,10 @@ void UploadDataToThingspeak()
 
         get_str.concat(" HTTP/1.1\r\n");
 
+        /* 0. Close current connection, if any */
+        esp8266.print("AT+CIPCLOSE\r\n");
+        (void)ReadUntilOkOrError(&esp8266);
+        
         /* Start the sequence */
         /* 1. Open a connection to the host*/
         esp8266.print("AT+CIPSTART=\"TCP\",\"api.thingspeak.com\",80\r\n");
