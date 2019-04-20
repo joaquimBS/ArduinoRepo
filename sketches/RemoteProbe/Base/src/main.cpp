@@ -50,8 +50,8 @@ SoftwareSerial esp8266(SS_RX, SS_TX); // RX, TX
 #define CLOSE_STR F("Connection: close\r\n\r\n\r\n")
 #define CLOSE_STR_LEN 23
 
-#define AP_SSID "MOVISTAR_B8E0"
-#define AP_PWD "vEEVqnsVXAJmJPvvqxqq"
+#define AP_SSID "CasaIoT"
+#define AP_PWD "iot-de-casa"
 
 #define HALT do {LED_OFF; delay(100); LED_ON; delay(100);} while(1)
 
